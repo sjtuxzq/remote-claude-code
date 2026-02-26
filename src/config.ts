@@ -1,0 +1,63 @@
+import "dotenv/config";
+
+export interface Config {
+  botToken: string;
+  allowedUserIds: number[];
+  allowedChatIds: number[];
+  allowedPaths: string[];
+  dataDir: string;
+  maxTurnsPerMessage?: number;
+  maxBudgetPerMessage?: number;
+}
+
+function requireEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(`Missing required environment variable: ${name}`);
+  }
+  return value;
+}
+
+function optionalIntEnv(name: string): number | undefined {
+  const value = process.env[name];
+  if (!value) return undefined;
+  const parsed = parseInt(value, 10);
+  if (isNaN(parsed)) return undefined;
+  return parsed;
+}
+
+function optionalFloatEnv(name: string): number | undefined {
+  const value = process.env[name];
+  if (!value) return undefined;
+  const parsed = parseFloat(value);
+  if (isNaN(parsed)) return undefined;
+  return parsed;
+}
+
+function optionalIdListEnv(name: string): number[] {
+  const value = process.env[name];
+  if (!value) return [];
+  return value
+    .split(",")
+    .map((id) => parseInt(id.trim(), 10))
+    .filter((id) => !isNaN(id));
+}
+
+function optionalStringListEnv(name: string): string[] {
+  const value = process.env[name];
+  if (!value) return [];
+  return value.split(",").map((s) => s.trim()).filter(Boolean);
+}
+
+export const config: Config = {
+  botToken: requireEnv("BOT_TOKEN"),
+  allowedUserIds: requireEnv("ALLOWED_USER_IDS")
+    .split(",")
+    .map((id) => parseInt(id.trim(), 10))
+    .filter((id) => !isNaN(id)),
+  allowedChatIds: optionalIdListEnv("ALLOWED_CHAT_IDS"),
+  allowedPaths: optionalStringListEnv("ALLOWED_PATHS"),
+  dataDir: process.env.DATA_DIR || "./data",
+  maxTurnsPerMessage: optionalIntEnv("MAX_TURNS_PER_MESSAGE"),
+  maxBudgetPerMessage: optionalFloatEnv("MAX_BUDGET_PER_MESSAGE"),
+};
