@@ -114,6 +114,11 @@ export function createMessageHandler(store: SessionStore) {
       const { promise } = runClaude(args, session.projectPath, callbacks);
       const result = await promise;
 
+      // Append completion indicator before finalizing
+      if (!questionAsked) {
+        streamer.append("\n\n✅ Done.");
+      }
+
       await streamer.finalize();
 
       if (result) {
