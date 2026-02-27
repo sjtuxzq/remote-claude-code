@@ -116,7 +116,7 @@ export function createMessageHandler(store: SessionStore) {
 
       // Append completion indicator before finalizing
       if (!questionAsked) {
-        streamer.append("\n\n✅ Done.");
+        streamer.append("\n\n💯");
       }
 
       await streamer.finalize();
