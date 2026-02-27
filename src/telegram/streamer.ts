@@ -3,6 +3,10 @@ import type { Api } from "grammy";
 const MAX_MESSAGE_LENGTH = 4000;
 const FLUSH_INTERVAL_MS = 500;
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 /** Extract the most relevant field from a tool's input for display. */
 function formatToolInput(name: string, input: Record<string, unknown>): string | null {
   if (!input || Object.keys(input).length === 0) return null;
@@ -117,10 +121,11 @@ export class TelegramStreamer {
     if (this.verbosity < 2) return;
 
     const inputSummary = formatToolInput(name, input);
-    let card = `\n🔧 <b>${escapeHtml(name)}</b>`;
+    let card = `\n\n🔧 <b>${escapeHtml(name)}</b>`;
     if (inputSummary) {
       card += `\n<blockquote>${escapeHtml(inputSummary)}</blockquote>`;
     }
+    card += `\n`;
 
     this.lastToolTag = `🔧 <b>${escapeHtml(name)}</b>`;
     this.pendingHtml += card;
@@ -214,7 +219,11 @@ export class TelegramStreamer {
           );
           this._lastSentHtml = this.currentMessageHtml;
         } catch (err: any) {
-          if (
+          if (err?.error_code === 429) {
+            const retryAfter = (err?.parameters?.retry_after ?? 5) * 1000;
+            console.log(`[streamer] Rate limited on edit, waiting ${retryAfter}ms`);
+            await sleep(retryAfter);
+          } else if (
             !err?.message?.includes("message is not modified") &&
             !err?.message?.includes("MESSAGE_NOT_MODIFIED")
           ) {
@@ -222,8 +231,15 @@ export class TelegramStreamer {
           }
         }
       }
-    } catch (err) {
-      console.error("[streamer] Flush error:", err);
+    } catch (err: any) {
+      if (err?.error_code === 429) {
+        // Rate limited on sendMessage — put content back for retry
+        const retryAfter = (err?.parameters?.retry_after ?? 5) * 1000;
+        console.log(`[streamer] Rate limited on send, waiting ${retryAfter}ms`);
+        await sleep(retryAfter);
+      } else {
+        console.error("[streamer] Flush error:", err);
+      }
     }
   }
 
