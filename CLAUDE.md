@@ -19,6 +19,8 @@ How it works:
 - Claude session IDs preserved — `--resume` works after restart
 - Telegram queues any messages sent during the brief gap — picked up automatically
 
+You may not be able to get the result of the restart command because it kills your parent process. So do not consecutively call restart command - you can assume the restart succeeds.
+
 ## PM2 Management
 
 - PM2 manages remote-cc as a daemon process
@@ -26,13 +28,3 @@ How it works:
 - Auto-restarts on crash
 - Logs: `pm2 logs remote-cc`
 - Status: `pm2 list`
-
-## If a bad build causes crash loop (corner case)
-
-Before restarting, back up the working dist: `cp -r dist/ dist-backup/`
-If crash loop occurs, rollback: `cp -r dist-backup/ dist/ && pm2 restart remote-cc`
-
-Full auto-rollback command:
-```bash
-cp -r dist/ dist-backup/ && npm run build && pm2 restart remote-cc && timeout /t 10 && pm2 show remote-cc | findstr "online" || (xcopy dist-backup dist /s /e /y && pm2 restart remote-cc)
-```
