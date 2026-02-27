@@ -12,7 +12,7 @@ let claudePath: string;
 try {
   claudePath = execSync(
     process.platform === "win32" ? "where claude" : "which claude",
-    { encoding: "utf-8" }
+    { encoding: "utf-8", windowsHide: true }
   ).trim().split("\n")[0];
   console.log(`[runner] Resolved claude path: ${claudePath}`);
 } catch {

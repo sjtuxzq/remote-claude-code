@@ -471,7 +471,7 @@ export function createCommandHandlers(store: SessionStore) {
     await ctx.reply("📥 Pulling latest changes...", threadOpts(ctx));
 
     try {
-      const pullOutput = execSync("git pull", { cwd: PROJECT_ROOT, encoding: "utf-8", timeout: 30000 });
+      const pullOutput = execSync("git pull", { cwd: PROJECT_ROOT, encoding: "utf-8", timeout: 30000, windowsHide: true });
       await ctx.reply(`📥 ${pullOutput.trim()}`, threadOpts(ctx));
 
       if (pullOutput.includes("Already up to date")) {
@@ -479,7 +479,7 @@ export function createCommandHandlers(store: SessionStore) {
       }
 
       await ctx.reply("🔨 Building...", threadOpts(ctx));
-      execSync("npm run build", { cwd: PROJECT_ROOT, encoding: "utf-8", timeout: 60000 });
+      execSync("npm run build", { cwd: PROJECT_ROOT, encoding: "utf-8", timeout: 60000, windowsHide: true });
 
       await ctx.reply("✅ Build complete. ♻️ Restarting...", threadOpts(ctx));
       setTimeout(() => process.exit(0), 500);
