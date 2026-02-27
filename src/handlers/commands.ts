@@ -430,6 +430,11 @@ export function createCommandHandlers(store: SessionStore) {
     );
   }
 
+  async function handleRestart(ctx: Context): Promise<void> {
+    await ctx.reply("♻️ Restarting...", threadOpts(ctx));
+    setTimeout(() => process.exit(0), 500);
+  }
+
   return {
     handleStart,
     handleHelp,
@@ -440,5 +445,6 @@ export function createCommandHandlers(store: SessionStore) {
     handleUsage,
     handleRepos,
     handleVerbosity,
+    handleRestart,
   };
 }

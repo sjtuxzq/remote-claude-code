@@ -23,6 +23,7 @@ export function createBot(): Bot {
   bot.command("usage", commands.handleUsage);
   bot.command("repos", commands.handleRepos);
   bot.command("verbosity", commands.handleVerbosity);
+  bot.command("restart", commands.handleRestart);
 
   // Message handler — catch-all for topic messages
   const messageHandler = createMessageHandler(store);

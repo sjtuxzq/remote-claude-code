@@ -95,10 +95,10 @@ export function createMessageHandler(store: SessionStore) {
       },
       onToolUse: (name, input) => {
         lastToolName = name;
-        streamer.sendToolCard(name, input);
+        streamer.appendToolCard(name, input);
       },
       onToolResult: (_name, isError) => {
-        streamer.sendToolResult(lastToolName, isError);
+        streamer.appendToolResult(lastToolName, isError);
       },
       onQuestion: (_toolUseId, input) => {
         console.log(`[message] AskUserQuestion received`);
@@ -189,6 +189,11 @@ export function createMessageHandler(store: SessionStore) {
     console.log(`[message] Claude session ID: ${session.claudeSessionId ?? "new"}`);
     console.log(`[message] Project path: ${session.projectPath}`);
 
-    await runClaudeForTopic(chatId, threadId, message.text, session, ctx.api);
+    // Fire-and-forget: don't await so grammy can ack the message immediately.
+    // This ensures the update offset advances and Telegram won't re-deliver
+    // this message if the bot restarts while Claude is still running.
+    runClaudeForTopic(chatId, threadId, message.text, session, ctx.api).catch(
+      (err) => console.error(`[message] Unhandled error in runClaudeForTopic:`, err)
+    );
   };
 }

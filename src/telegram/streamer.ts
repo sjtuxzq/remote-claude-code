@@ -81,16 +81,16 @@ export class TelegramStreamer {
   private threadId: number;
   private verbosity: number;
 
-  private pendingText = "";
+  // All content is accumulated as HTML
+  private pendingHtml = "";
   private currentMessageId: number | null = null;
-  private currentMessageText = "";
+  private currentMessageHtml = "";
   private flushTimer: ReturnType<typeof setInterval> | null = null;
   private flushPromise: Promise<void> = Promise.resolve();
   private finalized = false;
 
-  // Track the current tool card message so we can edit it on completion
-  private toolMessageId: number | null = null;
-  private toolCardText = "";
+  // Track tool card positions so we can update 🔧→✅/❌ in-place
+  private lastToolTag = "";
 
   constructor(api: Api, chatId: number, threadId: number, verbosity: number = 2) {
     this.api = api;
@@ -103,83 +103,59 @@ export class TelegramStreamer {
     }, FLUSH_INTERVAL_MS);
   }
 
+  /** Append Claude's streamed text (will be HTML-escaped). */
   append(text: string): void {
-    this.pendingText += text;
-    console.log(`[streamer] append: ${text.length} chars, pending total: ${this.pendingText.length}`);
+    this.pendingHtml += escapeHtml(text);
+    console.log(`[streamer] append: ${text.length} chars`);
   }
 
   /**
-   * Send a tool card as a separate message.
-   * Shows tool name and key input. Skipped if verbosity is 1.
-   */
-  async sendToolCard(name: string, input: Record<string, unknown>): Promise<void> {
-    if (this.verbosity < 2) return;
-
-    // Flush any pending response text first so tool card appears after it
-    this.scheduleFlush();
-    await this.flushPromise;
-
-    // Start a fresh response message after the tool card
-    this.currentMessageId = null;
-    this.currentMessageText = "";
-
-    const inputSummary = formatToolInput(name, input);
-    let html = `🔧 <b>${escapeHtml(name)}</b>`;
-    if (inputSummary) {
-      html += `\n<code>${escapeHtml(inputSummary)}</code>`;
-    }
-
-    this.toolCardText = html;
-
-    try {
-      const sent = await this.api.sendMessage(this.chatId, html, {
-        message_thread_id: this.threadId,
-        parse_mode: "HTML",
-      });
-      this.toolMessageId = sent.message_id;
-      console.log(`[streamer] Sent tool card: ${name} (msg ${sent.message_id})`);
-    } catch (err) {
-      console.error("[streamer] Failed to send tool card:", err);
-      this.toolMessageId = null;
-    }
-  }
-
-  /**
-   * Edit the tool card to show completion status (✅ or ❌).
+   * Append a tool card inline. Shows tool name + key input as a blockquote.
    * Skipped if verbosity is 1.
    */
-  async sendToolResult(name: string, isError: boolean): Promise<void> {
+  appendToolCard(name: string, input: Record<string, unknown>): void {
     if (this.verbosity < 2) return;
 
-    if (!this.toolMessageId) return;
+    const inputSummary = formatToolInput(name, input);
+    let card = `\n🔧 <b>${escapeHtml(name)}</b>`;
+    if (inputSummary) {
+      card += `\n<blockquote>${escapeHtml(inputSummary)}</blockquote>`;
+    }
+
+    this.lastToolTag = `🔧 <b>${escapeHtml(name)}</b>`;
+    this.pendingHtml += card;
+  }
+
+  /**
+   * Update the last tool card's icon from 🔧 to ✅/❌.
+   * Edits the current message in-place.
+   */
+  appendToolResult(name: string, isError: boolean): void {
+    if (this.verbosity < 2) return;
+    if (!this.lastToolTag) return;
 
     const icon = isError ? "❌" : "✅";
-    // Replace the 🔧 prefix with the result icon
-    const updatedText = this.toolCardText.replace(/^🔧/, icon);
+    const updatedTag = this.lastToolTag.replace(/^🔧/, icon);
 
-    try {
-      await this.api.editMessageText(
-        this.chatId,
-        this.toolMessageId,
-        updatedText,
-        { parse_mode: "HTML" },
-      );
-      console.log(`[streamer] Updated tool card: ${icon} ${name}`);
-    } catch (err: any) {
-      if (
-        !err?.message?.includes("message is not modified") &&
-        !err?.message?.includes("MESSAGE_NOT_MODIFIED")
-      ) {
-        console.error("[streamer] Failed to edit tool card:", err?.message);
+    // Update in pending html (not yet flushed)
+    if (this.pendingHtml.includes(this.lastToolTag)) {
+      this.pendingHtml = this.pendingHtml.replace(this.lastToolTag, updatedTag);
+    }
+    // Update in already-flushed message html
+    if (this.currentMessageHtml.includes(this.lastToolTag)) {
+      this.currentMessageHtml = this.currentMessageHtml.replace(this.lastToolTag, updatedTag);
+      // Force a re-flush to edit the message
+      if (!this.pendingHtml) {
+        this.pendingHtml = "";
+        this.scheduleFlush();
       }
     }
 
-    this.toolMessageId = null;
-    this.toolCardText = "";
+    this.lastToolTag = "";
   }
 
   appendError(error: string): void {
-    this.pendingText += `\n⚠️ Error: ${error}\n`;
+    this.pendingHtml += `\n⚠️ Error: ${escapeHtml(error)}\n`;
   }
 
   private scheduleFlush(): void {
@@ -187,47 +163,56 @@ export class TelegramStreamer {
   }
 
   private async flush(): Promise<void> {
-    if (!this.pendingText) return;
+    const hasNewContent = this.pendingHtml.length > 0;
+    const needsEdit = this.currentMessageId &&
+      this.currentMessageHtml !== this._lastSentHtml;
 
-    const text = this.pendingText;
-    this.pendingText = "";
+    if (!hasNewContent && !needsEdit) return;
 
-    console.log(`[streamer] Flushing ${text.length} chars, currentMessageId: ${this.currentMessageId}`);
+    const newHtml = this.pendingHtml;
+    this.pendingHtml = "";
+
+    console.log(`[streamer] Flushing ${newHtml.length} chars, currentMessageId: ${this.currentMessageId}`);
 
     try {
       // Check if adding to current message would exceed limit
       if (
         this.currentMessageId &&
-        this.currentMessageText.length + text.length > MAX_MESSAGE_LENGTH
+        this.currentMessageHtml.length + newHtml.length > MAX_MESSAGE_LENGTH
       ) {
-        // Start a new message
         console.log(`[streamer] Message limit reached, starting new message`);
         this.currentMessageId = null;
-        this.currentMessageText = "";
+        this.currentMessageHtml = "";
+        this._lastSentHtml = "";
       }
 
-      this.currentMessageText += text;
+      this.currentMessageHtml += newHtml;
+
+      // Skip if nothing to send
+      if (!this.currentMessageHtml.trim()) return;
 
       if (!this.currentMessageId) {
-        // Send a new message
-        console.log(`[streamer] Sending new message (${this.currentMessageText.length} chars)`);
+        console.log(`[streamer] Sending new message (${this.currentMessageHtml.length} chars)`);
         const sent = await this.api.sendMessage(
           this.chatId,
-          this.currentMessageText,
+          this.currentMessageHtml,
           {
             message_thread_id: this.threadId,
+            parse_mode: "HTML",
           }
         );
         this.currentMessageId = sent.message_id;
+        this._lastSentHtml = this.currentMessageHtml;
         console.log(`[streamer] Sent message ${sent.message_id}`);
       } else {
-        // Edit existing message
         try {
           await this.api.editMessageText(
             this.chatId,
             this.currentMessageId,
-            this.currentMessageText
+            this.currentMessageHtml,
+            { parse_mode: "HTML" }
           );
+          this._lastSentHtml = this.currentMessageHtml;
         } catch (err: any) {
           if (
             !err?.message?.includes("message is not modified") &&
@@ -242,17 +227,18 @@ export class TelegramStreamer {
     }
   }
 
+  // Track what was last sent to avoid no-op edits
+  private _lastSentHtml = "";
+
   async finalize(): Promise<void> {
     if (this.finalized) return;
     this.finalized = true;
 
-    // Stop the flush timer
     if (this.flushTimer) {
       clearInterval(this.flushTimer);
       this.flushTimer = null;
     }
 
-    // Wait for any in-progress flush, then do a final flush
     this.scheduleFlush();
     await this.flushPromise;
     console.log(`[streamer] Finalized`);
