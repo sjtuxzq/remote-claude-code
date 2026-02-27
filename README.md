@@ -17,7 +17,17 @@ Each session runs as a forum topic in a Telegram group. Messages you send in the
 - A Telegram bot token (from [@BotFather](https://t.me/BotFather))
 - A Telegram group with **Topics enabled** and the bot added as an admin
 
-## Setup
+## Quick Start
+
+```bash
+git clone <repo-url>
+cd remote-cc
+node setup.js
+```
+
+The setup script will install dependencies, walk you through `.env` configuration, build the project, and set up PM2 with auto-start.
+
+## Manual Setup
 
 1. **Clone and install**
 
