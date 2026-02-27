@@ -270,6 +270,31 @@ export function createCommandHandlers(store: SessionStore) {
     const chatId = ctx.chat?.id;
     if (!chatId) return;
 
+    const threadId = ctx.message?.message_thread_id;
+
+    // If inside a topic, show info for this session only
+    if (threadId) {
+      const session = store.getByThread(chatId, threadId);
+      if (!session) {
+        await ctx.reply("⚠️ This topic is not a tracked session.", { message_thread_id: threadId });
+        return;
+      }
+
+      const active = session.lastActiveAt
+        ? new Date(session.lastActiveAt).toLocaleString()
+        : "never";
+      const lines = [
+        `📋 Session: ${session.name}`,
+        ``,
+        `📁 ${session.projectPath}`,
+        `🕐 Last active: ${active}`,
+        `🔑 Session ID: ${session.claudeSessionId ?? "none (new session)"}`,
+      ];
+      await ctx.reply(lines.join("\n"), { message_thread_id: threadId });
+      return;
+    }
+
+    // Otherwise list all sessions
     const sessions = store.getAllForChat(chatId);
     if (sessions.length === 0) {
       await ctx.reply("No sessions yet. Use /new to create one.", threadOpts(ctx));
@@ -281,7 +306,8 @@ export function createCommandHandlers(store: SessionStore) {
         ? new Date(s.lastActiveAt).toLocaleString()
         : "never";
       const resumed = s.claudeSessionId ? "🟢" : "⚪";
-      return `${i + 1}. ${resumed} ${s.name}\n   📁 ${s.projectPath}\n   🕐 ${active}`;
+      const sessionId = s.claudeSessionId ? `\n   🔑 ${s.claudeSessionId}` : "";
+      return `${i + 1}. ${resumed} ${s.name}\n   📁 ${s.projectPath}\n   🕐 ${active}${sessionId}`;
     });
 
     await ctx.reply(`📋 Sessions:\n\n${lines.join("\n\n")}`, threadOpts(ctx));
