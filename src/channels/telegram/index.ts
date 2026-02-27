@@ -34,6 +34,7 @@ export async function startTelegram(
   bot.command("reset", commands.handleReset);
   bot.command("delete", commands.handleDelete);
   bot.command("archive", commands.handleArchive);
+  bot.command("unarchive", commands.handleUnarchive);
   bot.command("sessions", commands.handleSessions);
   bot.command("usage", commands.handleUsage);
   bot.command("repos", commands.handleRepos);
@@ -59,6 +60,7 @@ export async function startTelegram(
     { command: "reset", description: "Reset session in current topic" },
     { command: "delete", description: "Delete session and close topic" },
     { command: "archive", description: "Close topic (keeps session data)" },
+    { command: "unarchive", description: "Reopen an archived topic" },
     { command: "sessions", description: "List all sessions" },
     { command: "usage", description: "Show token usage" },
     { command: "repos", description: "List available project paths" },

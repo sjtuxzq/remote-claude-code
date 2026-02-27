@@ -34,6 +34,7 @@ export function createCommandHandlers(
         "/reset \u2014 Reset session in current topic (fresh conversation)\n" +
         "/delete \u2014 Delete session and close topic\n" +
         "/archive \u2014 Close topic (keeps session data)\n" +
+        "/unarchive \u2014 Reopen an archived topic\n" +
         "/sessions \u2014 List all sessions\n" +
         "/usage \u2014 Show token usage\n" +
         "/verbosity \u2014 Set tool message verbosity (1=hide, 2=show)\n" +
@@ -403,6 +404,35 @@ export function createCommandHandlers(
     }
   }
 
+  async function handleUnarchive(ctx: Context): Promise<void> {
+    const chatId = ctx.chat?.id;
+    if (!chatId) return;
+
+    const topicThreadId = ctx.message?.message_thread_id;
+    if (!topicThreadId) {
+      await ctx.reply("\u26a0\ufe0f Use /unarchive inside an archived session topic.", threadOpts(ctx));
+      return;
+    }
+
+    const threadId = `${chatId}:${topicThreadId}`;
+    const session = sessionManager.getByThread(threadId);
+    if (!session) {
+      await ctx.reply("\u26a0\ufe0f This topic is not a tracked session.", { message_thread_id: topicThreadId });
+      return;
+    }
+
+    try {
+      await ctx.api.reopenForumTopic(chatId, topicThreadId);
+      await ctx.reply(`\ud83d\udce4 Session "${session.name}" unarchived. You can continue chatting.`, {
+        message_thread_id: topicThreadId,
+      });
+    } catch {
+      await ctx.reply("\u26a0\ufe0f Could not reopen the topic. You may need to reopen it manually.", {
+        message_thread_id: topicThreadId,
+      });
+    }
+  }
+
   async function handleRestart(ctx: Context): Promise<void> {
     await ctx.reply("\u267b\ufe0f Restarting...", threadOpts(ctx));
     orchestrator.restart();
@@ -435,6 +465,7 @@ export function createCommandHandlers(
     handleReset,
     handleDelete,
     handleArchive,
+    handleUnarchive,
     handleSessions,
     handleUsage,
     handleRepos,
