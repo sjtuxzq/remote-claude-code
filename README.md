@@ -111,6 +111,7 @@ The setup script will install dependencies, walk you through `.env` configuratio
 | `/verbosity <1\|2>` | Set tool verbosity (1=hide, 2=show) |
 | `/repos` | List available project paths |
 | `/restart` | Restart the bot (PM2 auto-restarts) |
+| `/update` | Pull latest code from GitHub, build, and restart |
 | `/help` | Show help message |
 
 ## Notes

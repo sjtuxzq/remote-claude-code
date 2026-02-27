@@ -27,6 +27,7 @@ await bot.api.setMyCommands([
   { command: "repos", description: "List available project paths" },
   { command: "verbosity", description: "Set tool verbosity (1=hide, 2=show)" },
   { command: "restart", description: "Restart the bot" },
+  { command: "update", description: "Pull latest code, build, and restart" },
   { command: "help", description: "Show help message" },
 ]);
 console.log("📋 Bot commands registered");

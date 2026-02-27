@@ -24,6 +24,7 @@ export function createBot(): Bot {
   bot.command("repos", commands.handleRepos);
   bot.command("verbosity", commands.handleVerbosity);
   bot.command("restart", commands.handleRestart);
+  bot.command("update", commands.handleUpdate);
 
   // Message handler — catch-all for topic messages
   const messageHandler = createMessageHandler(store);

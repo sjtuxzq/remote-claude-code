@@ -95,6 +95,7 @@ export function createCommandHandlers(store: SessionStore) {
         "/usage — Show token usage\n" +
         "/verbosity — Set tool message verbosity (1=hide, 2=show)\n" +
         "/repos — List available project paths\n" +
+        "/update — Pull latest code, build, and restart\n" +
         "/help — Show this message\n\n" +
         "Send messages in a session topic to chat with Claude."
     );
@@ -461,6 +462,30 @@ export function createCommandHandlers(store: SessionStore) {
     setTimeout(() => process.exit(0), 500);
   }
 
+  async function handleUpdate(ctx: Context): Promise<void> {
+    await ctx.reply("📥 Pulling latest changes...", threadOpts(ctx));
+
+    const projectRoot = path.resolve(import.meta.dirname ?? ".", "..");
+
+    try {
+      const { execSync } = await import("node:child_process");
+      const pullOutput = execSync("git pull", { cwd: projectRoot, encoding: "utf-8" });
+      await ctx.reply(`📥 ${pullOutput.trim()}`, threadOpts(ctx));
+
+      if (pullOutput.includes("Already up to date")) {
+        return;
+      }
+
+      await ctx.reply("🔨 Building...", threadOpts(ctx));
+      execSync("npm run build", { cwd: projectRoot, encoding: "utf-8" });
+
+      await ctx.reply("♻️ Restarting...", threadOpts(ctx));
+      setTimeout(() => process.exit(0), 500);
+    } catch (err: any) {
+      await ctx.reply(`⚠️ Update failed: ${err?.message || "Unknown error"}`, threadOpts(ctx));
+    }
+  }
+
   return {
     handleStart,
     handleHelp,
@@ -472,5 +497,6 @@ export function createCommandHandlers(store: SessionStore) {
     handleRepos,
     handleVerbosity,
     handleRestart,
+    handleUpdate,
   };
 }
