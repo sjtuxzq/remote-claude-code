@@ -1,9 +1,14 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { execSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import type { Context } from "grammy";
 import type { SessionStore } from "../store/sessions.js";
 import type { Session } from "../types.js";
 import { config } from "../config.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const PROJECT_ROOT = path.resolve(path.dirname(__filename), "..", "..");
 
 function formatTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -465,11 +470,8 @@ export function createCommandHandlers(store: SessionStore) {
   async function handleUpdate(ctx: Context): Promise<void> {
     await ctx.reply("📥 Pulling latest changes...", threadOpts(ctx));
 
-    const projectRoot = path.resolve(import.meta.dirname ?? ".", "..");
-
     try {
-      const { execSync } = await import("node:child_process");
-      const pullOutput = execSync("git pull", { cwd: projectRoot, encoding: "utf-8" });
+      const pullOutput = execSync("git pull", { cwd: PROJECT_ROOT, encoding: "utf-8", timeout: 30000 });
       await ctx.reply(`📥 ${pullOutput.trim()}`, threadOpts(ctx));
 
       if (pullOutput.includes("Already up to date")) {
@@ -477,12 +479,14 @@ export function createCommandHandlers(store: SessionStore) {
       }
 
       await ctx.reply("🔨 Building...", threadOpts(ctx));
-      execSync("npm run build", { cwd: projectRoot, encoding: "utf-8" });
+      execSync("npm run build", { cwd: PROJECT_ROOT, encoding: "utf-8", timeout: 60000 });
 
-      await ctx.reply("♻️ Restarting...", threadOpts(ctx));
+      await ctx.reply("✅ Build complete. ♻️ Restarting...", threadOpts(ctx));
       setTimeout(() => process.exit(0), 500);
     } catch (err: any) {
-      await ctx.reply(`⚠️ Update failed: ${err?.message || "Unknown error"}`, threadOpts(ctx));
+      const stderr = err?.stderr?.toString?.() || "";
+      const msg = stderr || err?.message || "Unknown error";
+      await ctx.reply(`⚠️ Update failed:\n${msg}`, threadOpts(ctx));
     }
   }
 
