@@ -112,10 +112,8 @@ export function runClaude(
           lastToolName = inner.content_block.name;
           if (inner.content_block.name === "AskUserQuestion") {
             console.log(`[runner] AskUserQuestion tool_use started (stream), id: ${inner.content_block.id}`);
-            // Don't emit as regular tool use — handled in assistant event
-          } else {
-            callbacks.onToolUse(inner.content_block.name);
           }
+          // Tool use is emitted from handleAssistantEvent with full input
         }
         break;
 
@@ -134,9 +132,14 @@ export function runClaude(
           continue;
         }
         callbacks.onText(block.text);
-      } else if (block.type === "tool_use" && block.name === "AskUserQuestion") {
-        console.log(`[runner] AskUserQuestion from assistant event, id: ${block.id}, input: ${JSON.stringify(block.input).substring(0, 300)}`);
-        callbacks.onQuestion(block.id, block.input as any);
+      } else if (block.type === "tool_use") {
+        if (block.name === "AskUserQuestion") {
+          console.log(`[runner] AskUserQuestion from assistant event, id: ${block.id}, input: ${JSON.stringify(block.input).substring(0, 300)}`);
+          callbacks.onQuestion(block.id, block.input as any);
+        } else {
+          lastToolName = block.name;
+          callbacks.onToolUse(block.name, block.input ?? {});
+        }
       }
     }
   };

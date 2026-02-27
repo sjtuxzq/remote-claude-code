@@ -21,6 +21,7 @@ export interface Session {
   totalUsage: TokenUsage;       // Cumulative token usage
   totalDurationMs: number;      // Cumulative API duration
   totalTurns: number;           // Cumulative turns
+  verbosity?: number;           // 1 = hide tools, 2 = show tools (default)
 }
 
 // === Claude CLI Events ===
@@ -143,7 +144,7 @@ export interface AskUserQuestionInput {
 export interface RunnerCallbacks {
   onSessionId: (sessionId: string) => void;
   onText: (text: string) => void;
-  onToolUse: (name: string) => void;
+  onToolUse: (name: string, input: Record<string, unknown>) => void;
   onToolResult: (name: string, isError: boolean) => void;
   onQuestion: (toolUseId: string, input: AskUserQuestionInput) => void;
   onError: (error: string) => void;

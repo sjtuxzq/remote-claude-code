@@ -26,6 +26,56 @@ function isPathAllowed(projectPath: string): boolean {
   });
 }
 
+/**
+ * Resolve a user input to a project path.
+ * If the input looks like a path (absolute or relative), resolve it directly.
+ * Otherwise, treat it as a repo name and search allowed paths for a
+ * case-insensitive match among their immediate subdirectories.
+ * Returns { path, error? } — if ambiguous or not found, error is set.
+ */
+function resolveProjectPath(input: string): { path: string | null; error: string | null } {
+  const looksLikePath = input.startsWith("/") || input.startsWith("\\") ||
+    input.startsWith("./") || input.startsWith("..") ||
+    /^[A-Za-z]:[/\\]/.test(input); // Windows absolute path
+
+  if (looksLikePath || config.allowedPaths.length === 0) {
+    return { path: path.resolve(input), error: null };
+  }
+
+  // Search allowed paths for a matching subdirectory by name (case-insensitive)
+  const needle = input.toLowerCase();
+  const matches: string[] = [];
+
+  for (const allowedPath of config.allowedPaths) {
+    const resolved = path.resolve(allowedPath);
+    try {
+      const entries = fs.readdirSync(resolved, { withFileTypes: true });
+      for (const entry of entries) {
+        if (entry.isDirectory() && entry.name.toLowerCase() === needle) {
+          matches.push(path.join(resolved, entry.name));
+        }
+      }
+    } catch {
+      // Skip inaccessible paths
+    }
+  }
+
+  if (matches.length === 1) {
+    return { path: matches[0], error: null };
+  }
+
+  if (matches.length > 1) {
+    const list = matches.map((m) => `• ${m}`).join("\n");
+    return {
+      path: null,
+      error: `⚠️ Ambiguous name "${input}" — multiple matches:\n${list}\n\nUse the full path instead.`,
+    };
+  }
+
+  // No match found — fall back to treating it as a path
+  return { path: path.resolve(input), error: null };
+}
+
 export function createCommandHandlers(store: SessionStore) {
   async function handleStart(ctx: Context): Promise<void> {
     const chatType = ctx.chat?.type;
@@ -38,11 +88,12 @@ export function createCommandHandlers(store: SessionStore) {
             "Make sure Topics are enabled in group settings and the bot is an admin.\n\n"
           : "") +
         "Commands:\n" +
-        "/new <path> [name] — Start a new Claude session\n" +
+        "/new <name|path> [session-name] — Start a new Claude session\n" +
         "/reset — Reset session in current topic (fresh conversation)\n" +
         "/delete — Delete session and close topic\n" +
         "/sessions — List all sessions\n" +
         "/usage — Show token usage\n" +
+        "/verbosity — Set tool message verbosity (1=hide, 2=show)\n" +
         "/repos — List available project paths\n" +
         "/help — Show this message\n\n" +
         "Send messages in a session topic to chat with Claude."
@@ -62,7 +113,8 @@ export function createCommandHandlers(store: SessionStore) {
     const match = text.match(/^\/new(?:@\S+)?\s+(\S+)(?:\s+(.+))?$/);
     if (!match) {
       await ctx.reply(
-        "Usage: /new <project-path> [session-name]\n" +
+        "Usage: /new <name-or-path> [session-name]\n" +
+          "Example: /new my-project\n" +
           "Example: /new /home/user/my-project my-session\n\n" +
           "Use /repos to see available projects.",
         threadOpts(ctx)
@@ -70,8 +122,15 @@ export function createCommandHandlers(store: SessionStore) {
       return;
     }
 
-    const projectPath = path.resolve(match[1]);
-    const sessionName = match[2]?.trim() || path.basename(projectPath);
+    const resolved = resolveProjectPath(match[1]);
+    if (resolved.error) {
+      await ctx.reply(resolved.error, threadOpts(ctx));
+      return;
+    }
+    const projectPath = resolved.path!;
+    const repoName = path.basename(projectPath);
+    const sessionName = match[2]?.trim() || repoName;
+    const topicTitle = match[2]?.trim() ? `${repoName}:${match[2].trim()}` : repoName;
 
     // Check allowed paths
     if (!isPathAllowed(projectPath)) {
@@ -97,7 +156,7 @@ export function createCommandHandlers(store: SessionStore) {
     // Create forum topic
     let topic;
     try {
-      topic = await ctx.api.createForumTopic(chatId, sessionName);
+      topic = await ctx.api.createForumTopic(chatId, topicTitle);
     } catch (err: any) {
       const chatType = ctx.chat?.type;
       const isGroup = chatType === "group" || chatType === "supergroup";
@@ -134,6 +193,13 @@ export function createCommandHandlers(store: SessionStore) {
       `🚀 Session "${sessionName}" created!\n📁 Project: ${projectPath}\n\nSend a message here to start chatting with Claude.`,
       { message_thread_id: topic.message_thread_id }
     );
+
+    // Unpin the auto-pinned service message Telegram creates for new topics
+    try {
+      await ctx.api.unpinAllForumTopicMessages(chatId, topic.message_thread_id);
+    } catch {
+      // Ignore — may not have permission
+    }
 
     // Confirm in the original thread/General
     await ctx.reply(
@@ -319,6 +385,51 @@ export function createCommandHandlers(store: SessionStore) {
     );
   }
 
+  async function handleVerbosity(ctx: Context): Promise<void> {
+    const chatId = ctx.chat?.id;
+    if (!chatId) return;
+
+    const threadId = ctx.message?.message_thread_id;
+    if (!threadId) {
+      await ctx.reply("⚠️ Use /verbosity inside a session topic.", threadOpts(ctx));
+      return;
+    }
+
+    const session = store.getByThread(chatId, threadId);
+    if (!session) {
+      await ctx.reply("⚠️ This topic is not a tracked session.", { message_thread_id: threadId });
+      return;
+    }
+
+    const text = ctx.message?.text || "";
+    const match = text.match(/^\/verbosity(?:@\S+)?\s+(\d+)$/);
+
+    if (!match) {
+      const current = session.verbosity ?? 2;
+      await ctx.reply(
+        `🔧 Tool verbosity: ${current}\n\n` +
+          `1 — Hide tool messages\n` +
+          `2 — Show tool cards with inputs\n\n` +
+          `Usage: /verbosity <1|2>`,
+        { message_thread_id: threadId }
+      );
+      return;
+    }
+
+    const level = parseInt(match[1], 10);
+    if (level < 1 || level > 2) {
+      await ctx.reply("⚠️ Verbosity must be 1 or 2.", { message_thread_id: threadId });
+      return;
+    }
+
+    store.updateVerbosity(chatId, threadId, level);
+    const labels = ["", "Hide tool messages", "Show tool cards"];
+    await ctx.reply(
+      `✅ Verbosity set to ${level} — ${labels[level]}`,
+      { message_thread_id: threadId }
+    );
+  }
+
   return {
     handleStart,
     handleHelp,
@@ -328,5 +439,6 @@ export function createCommandHandlers(store: SessionStore) {
     handleSessions,
     handleUsage,
     handleRepos,
+    handleVerbosity,
   };
 }

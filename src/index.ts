@@ -19,12 +19,13 @@ console.log(`   Data dir: ${dataDir}`);
 
 // Set bot commands on startup
 await bot.api.setMyCommands([
-  { command: "new", description: "Create a new Claude session (/new <path> [name])" },
+  { command: "new", description: "Start a new session (/new <name|path> [session-name])" },
   { command: "reset", description: "Reset session in current topic" },
   { command: "delete", description: "Delete session and close topic" },
   { command: "sessions", description: "List all sessions" },
   { command: "usage", description: "Show token usage" },
   { command: "repos", description: "List available project paths" },
+  { command: "verbosity", description: "Set tool verbosity (1=hide, 2=show)" },
   { command: "help", description: "Show help message" },
 ]);
 console.log("📋 Bot commands registered");

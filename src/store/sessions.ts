@@ -60,6 +60,14 @@ export class SessionStore {
     }
   }
 
+  updateVerbosity(chatId: number, threadId: number, verbosity: number): void {
+    const session = this.getByThread(chatId, threadId);
+    if (session) {
+      session.verbosity = verbosity;
+      this.save();
+    }
+  }
+
   touch(chatId: number, threadId: number): void {
     const session = this.getByThread(chatId, threadId);
     if (session) {

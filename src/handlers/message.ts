@@ -79,7 +79,7 @@ export function createMessageHandler(store: SessionStore) {
     const args = buildArgs(prompt, session);
     console.log(`[message] Claude args: ${args.join(" ")}`);
 
-    const streamer = new TelegramStreamer(api, chatId, threadId);
+    const streamer = new TelegramStreamer(api, chatId, threadId, session.verbosity ?? 2);
     let lastToolName = "tool";
     let questionAsked = false;
 
@@ -93,12 +93,12 @@ export function createMessageHandler(store: SessionStore) {
       onText: (text) => {
         streamer.append(text);
       },
-      onToolUse: (name) => {
+      onToolUse: (name, input) => {
         lastToolName = name;
-        streamer.appendToolUse(name);
+        streamer.sendToolCard(name, input);
       },
       onToolResult: (_name, isError) => {
-        streamer.appendToolResult(lastToolName, isError);
+        streamer.sendToolResult(lastToolName, isError);
       },
       onQuestion: (_toolUseId, input) => {
         console.log(`[message] AskUserQuestion received`);
