@@ -35,6 +35,7 @@ export function runClaude(
     cwd,
     env: cleanEnv,
     stdio: ["ignore", "pipe", "pipe"],
+    windowsHide: true,
   });
 
   console.log(`[runner] Spawned claude (pid ${proc.pid}) in ${cwd}`);
