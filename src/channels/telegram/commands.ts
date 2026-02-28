@@ -1,4 +1,5 @@
 import * as path from "node:path";
+import * as fs from "node:fs";
 import type { Context } from "grammy";
 import type { Orchestrator } from "../../core/orchestrator.js";
 import type { Session } from "../../core/types.js";
@@ -196,11 +197,12 @@ export function createCommandHandlers(
     );
   }
 
-  /** Reconcile an existing session: add worktree if it's a git repo without one. */
+  /** Reconcile an existing session: add or recreate worktree if needed. */
   async function handleNewReconcile(ctx: Context, chatId: number, session: Session): Promise<void> {
     const topicThreadId = ctx.message!.message_thread_id!;
 
-    if (session.worktree) {
+    // If session has worktree metadata and directory exists — nothing to do
+    if (session.worktree && fs.existsSync(session.worktree.worktreePath)) {
       await ctx.reply(
         `\u2705 Session already up to date.\n\ud83c\udf3f Branch: ${session.worktree.branch}\n\ud83d\udcc2 Worktree: ${session.worktree.worktreePath}\n\u2705 Auto-review enabled`,
         { message_thread_id: topicThreadId }
@@ -208,8 +210,8 @@ export function createCommandHandlers(
       return;
     }
 
-    // Resolve the original project path (before any worktree)
-    const originalPath = session.projectPath;
+    // Resolve the original repo path
+    const originalPath = session.worktree?.repoPath ?? session.projectPath;
 
     if (!isGitRepo(originalPath)) {
       await ctx.reply(
@@ -221,7 +223,8 @@ export function createCommandHandlers(
 
     try {
       const repoRoot = getRepoRoot(originalPath);
-      const wt = createWorktree(repoRoot, session.name);
+      const branchName = session.worktree?.branch ?? session.name;
+      const wt = createWorktree(repoRoot, branchName);
 
       sessionManager.enableWorktree(session.id, {
         repoPath: repoRoot,
@@ -229,8 +232,9 @@ export function createCommandHandlers(
         worktreePath: wt.worktreePath,
       });
 
+      const action = session.worktree ? "Worktree recreated" : "Worktree enabled";
       await ctx.reply(
-        `\u2705 Worktree enabled!\n\ud83c\udf3f Branch: ${wt.branch}\n\ud83d\udcc2 Worktree: ${wt.worktreePath}\n\u2705 Auto-review enabled\n\n\u26a0\ufe0f Claude session reset (working directory changed).`,
+        `\u2705 ${action}!\n\ud83c\udf3f Branch: ${wt.branch}\n\ud83d\udcc2 Worktree: ${wt.worktreePath}\n\u2705 Auto-review enabled\n\n\u26a0\ufe0f Claude session reset (working directory changed).`,
         { message_thread_id: topicThreadId }
       );
     } catch (err: any) {
