@@ -228,7 +228,7 @@ export async function startCli(orchestrator: Orchestrator): Promise<void> {
   console.log();
   console.log(
     dim(
-      "Commands: new <path>, reset, sessions, usage, repos, verbosity <1|2>, restart, update, exit\n"
+      "Commands: new <path>, reset, sessions, usage, repos, verbosity <1|2|3>, restart, update, exit\n"
     )
   );
 
@@ -370,12 +370,12 @@ export async function startCli(orchestrator: Orchestrator): Promise<void> {
 
       if (trimmed.startsWith("verbosity ")) {
         const level = parseInt(trimmed.substring(10).trim(), 10);
-        if (level < 1 || level > 2) {
-          console.log(red("Verbosity must be 1 or 2."));
+        if (level < 1 || level > 3) {
+          console.log(red("Verbosity must be 1, 2, or 3."));
           continue;
         }
         sessionManager.updateVerbosity(currentSession.id, level);
-        const labels = ["", "Hide tool messages", "Show tool cards"];
+        const labels = ["", "Hide tool messages", "Show tool cards (collapsed)", "Show tool cards (expanded)"];
         console.log(
           green(`\u2705 Verbosity set to ${level} \u2014 ${labels[level]}`)
         );

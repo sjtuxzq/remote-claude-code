@@ -60,7 +60,7 @@ export async function startTelegram(
     { command: "sessions", description: "List all sessions" },
     { command: "usage", description: "Show token usage" },
     { command: "repos", description: "List available project paths" },
-    { command: "verbosity", description: "Set tool verbosity (1=hide, 2=show)" },
+    { command: "verbosity", description: "Set tool verbosity (1=hide, 2=collapsed, 3=expanded)" },
     { command: "restart", description: "Restart the bot" },
     { command: "update", description: "Pull latest code, build, and restart" },
     { command: "help", description: "Show help message" },

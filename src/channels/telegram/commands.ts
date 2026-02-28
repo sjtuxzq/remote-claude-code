@@ -45,7 +45,7 @@ export function createCommandHandlers(
         "/delete \u2014 Delete session and close topic\n" +
         "/sessions \u2014 List all sessions\n" +
         "/usage \u2014 Show token usage\n" +
-        "/verbosity \u2014 Set tool message verbosity (1=hide, 2=show)\n" +
+        "/verbosity \u2014 Set tool message verbosity (1=hide, 2=collapsed, 3=expanded)\n" +
         "/repos \u2014 List available project paths\n" +
         "/update \u2014 Pull latest code, build, and restart\n" +
         "/help \u2014 Show this message\n\n" +

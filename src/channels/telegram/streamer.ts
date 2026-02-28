@@ -204,29 +204,25 @@ export class TelegramTransport {
   ): void {
     const state = this.getOrCreateState(threadId);
 
+    const escapedName = escapeHtml(name);
     const inputSummary = formatToolInput(name, input);
+    const toolTag = `\ud83d\udd27 <b>${escapedName}</b>`;
 
+    let card: string;
     if (collapsed) {
       // Collapsed: entire card inside expandable blockquote
-      let card = `\n\n<blockquote expandable>\ud83d\udd27 <b>${escapeHtml(name)}</b>`;
-      if (inputSummary) {
-        card += `\n${escapeHtml(inputSummary)}`;
-      }
+      card = `\n\n<blockquote expandable>${toolTag}`;
+      if (inputSummary) card += `\n${escapeHtml(inputSummary)}`;
       card += `</blockquote>\n`;
-
-      state.lastToolTag = `\ud83d\udd27 <b>${escapeHtml(name)}</b>`;
-      state.pendingHtml += card;
     } else {
       // Expanded: name outside, input in regular blockquote
-      let card = `\n\n\ud83d\udd27 <b>${escapeHtml(name)}</b>`;
-      if (inputSummary) {
-        card += `\n<blockquote>${escapeHtml(inputSummary)}</blockquote>`;
-      }
+      card = `\n\n${toolTag}`;
+      if (inputSummary) card += `\n<blockquote>${escapeHtml(inputSummary)}</blockquote>`;
       card += `\n`;
-
-      state.lastToolTag = `\ud83d\udd27 <b>${escapeHtml(name)}</b>`;
-      state.pendingHtml += card;
     }
+
+    state.lastToolTag = toolTag;
+    state.pendingHtml += card;
   }
 
   private handleToolResult(
