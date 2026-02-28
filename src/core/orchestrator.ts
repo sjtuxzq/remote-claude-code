@@ -4,7 +4,7 @@ import * as path from "node:path";
 import type { Agent, AgentRequest } from "./agent.js";
 import type { SessionManager } from "../store/sessions.js";
 import type { CoreConfig, ChannelEndpoint } from "./types.js";
-import { getDefaultBranch, removeWorktree } from "../git/worktree.js";
+import { getDefaultBranch } from "../git/worktree.js";
 import { CODING_INSTRUCTION } from "../prompts/instructions.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -205,6 +205,8 @@ export class Orchestrator {
 
       // Auto-trigger review pipeline when agent signals READY_FOR_REVIEW
       const resultText = result.resultText ?? "";
+      console.log(`[orchestrator] resultText (${resultText.length} chars): ${resultText.substring(0, 200)}`);
+      console.log(`[orchestrator] hasWorktree: ${!!session.worktree}, hasMarker: ${resultText.includes("READY_FOR_REVIEW")}`);
       if (session.worktree && resultText.includes("READY_FOR_REVIEW")) {
         // Clean up running state before entering review pipeline
         const state = this.sessionStates.get(sessionId);
@@ -336,26 +338,14 @@ export class Orchestrator {
         const hasFeedback = resultText.includes("REVIEW_FEEDBACK");
 
         if (approved) {
-          // Reviewer merged the branch — clean up worktree
+          // Reviewer merged the branch
           console.log(`[orchestrator] Review APPROVED for session "${session.name}"`);
 
           endpoint.send(threadId, {
             type: "text",
-            text: `\u2705 Branch "${branch}" merged into "${defaultBranch}"!\nWorktree cleaned up.`,
+            text: `\u2705 Branch "${branch}" merged into "${defaultBranch}"!`,
             subtype: "notice",
           });
-
-          // Remove worktree (preserve branch in git history)
-          try {
-            removeWorktree(
-              session.worktree.repoPath,
-              session.worktree.worktreePath,
-              session.worktree.branch,
-              false // Don't delete branch
-            );
-          } catch (err: any) {
-            console.error(`[orchestrator] Failed to remove worktree:`, err?.message);
-          }
 
           return;
         }
