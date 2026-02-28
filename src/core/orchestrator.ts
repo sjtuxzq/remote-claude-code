@@ -296,15 +296,13 @@ export class Orchestrator {
           `Steps:`,
           `1. Run: git diff ${defaultBranch}...${branch}`,
           `2. Review the diff for correctness, code quality, bugs, and style.`,
-          `3. If everything looks good and ready to merge:`,
-          `   - Run: git checkout ${defaultBranch}`,
-          `   - Run: git merge ${branch} --no-edit`,
+          `3. If everything looks good:`,
           `   - Respond with REVIEW_APPROVED on its own line, followed by a brief summary.`,
           `4. If there are issues:`,
           `   - Respond with REVIEW_FEEDBACK on its own line, followed by specific,`,
           `     actionable feedback items the developer should fix.`,
           ``,
-          `Do NOT create new branches or make changes yourself. Only merge or give feedback.`,
+          `Do NOT merge, create new branches, or make code changes yourself. Only review and give feedback.`,
         ].join("\n");
 
         const reviewRequest: AgentRequest = {
@@ -343,7 +341,7 @@ export class Orchestrator {
 
           endpoint.send(threadId, {
             type: "text",
-            text: `\u2705 Branch "${branch}" merged into "${defaultBranch}"!`,
+            text: `\u2705 Review approved for branch "${branch}"!`,
             subtype: "notice",
           });
 
