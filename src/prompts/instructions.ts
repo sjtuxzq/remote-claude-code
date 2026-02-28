@@ -1,0 +1,1 @@
+export const CODING_INSTRUCTION = `When you finish a coding task and have committed all changes, include READY_FOR_REVIEW on its own line in your final response. This triggers an automatic code review. Do NOT include this marker for non-coding responses like answering questions or explanations.`;

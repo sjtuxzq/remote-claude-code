@@ -127,6 +127,7 @@ export function createWorktree(
   console.log(
     `[worktree] Created worktree: ${worktreePath} (branch: ${uniqueBranch} from ${base})`
   );
+
   return { worktreePath, branch: uniqueBranch };
 }
 

@@ -5,6 +5,7 @@ import type { Agent, AgentRequest } from "./agent.js";
 import type { SessionManager } from "../store/sessions.js";
 import type { CoreConfig, ChannelEndpoint } from "./types.js";
 import { getDefaultBranch, removeWorktree } from "../git/worktree.js";
+import { CODING_INSTRUCTION } from "../prompts/instructions.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const PROJECT_ROOT = path.resolve(path.dirname(__filename), "..", "..");
@@ -153,8 +154,14 @@ export class Orchestrator {
     console.log(`[orchestrator] Agent session ID: ${session.agentSessionId ?? "new"}`);
     console.log(`[orchestrator] Project path: ${session.projectPath}`);
 
+    // For worktree sessions, inject review instruction on first message
+    let prompt = text;
+    if (session.worktree && !session.agentSessionId) {
+      prompt += `\n\n[IMPORTANT: ${CODING_INSTRUCTION}]`;
+    }
+
     const request: AgentRequest = {
-      prompt: text,
+      prompt,
       threadId,
       endpoint,
       agentSessionId: session.agentSessionId,
@@ -196,8 +203,9 @@ export class Orchestrator {
         return;
       }
 
-      // Auto-trigger review pipeline for worktree sessions
-      if (session.worktree) {
+      // Auto-trigger review pipeline when agent signals READY_FOR_REVIEW
+      const resultText = result.resultText ?? "";
+      if (session.worktree && resultText.includes("READY_FOR_REVIEW")) {
         // Clean up running state before entering review pipeline
         const state = this.sessionStates.get(sessionId);
         if (state) {
@@ -370,7 +378,8 @@ export class Orchestrator {
           // Build feedback prompt for the coding Claude
           const feedbackPrompt = [
             `A code reviewer examined your changes (branch "${branch}" vs "${defaultBranch}") and found issues.`,
-            `Please address this feedback, then commit your fixes:`,
+            `Please address this feedback, then commit your fixes.`,
+            `When done, include READY_FOR_REVIEW on its own line in your response.`,
             ``,
             feedback,
           ].join("\n");
