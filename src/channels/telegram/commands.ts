@@ -1,6 +1,14 @@
 import * as path from "node:path";
 import type { Context } from "grammy";
 import type { Orchestrator } from "../../core/orchestrator.js";
+import type { Session } from "../../core/types.js";
+import {
+  isGitRepo,
+  getRepoRoot,
+  createWorktree,
+  removeWorktree,
+  getWorktreeStatus,
+} from "../../git/worktree.js";
 
 function formatTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -31,6 +39,7 @@ export function createCommandHandlers(
           : "") +
         "Commands:\n" +
         "/new <name|path> [session-name] \u2014 Start a new Claude session\n" +
+        "  \u2022 Git repos get isolated worktrees + auto code review\n" +
         "/reset \u2014 Reset session in current topic (fresh conversation)\n" +
         "/delete \u2014 Delete session and close topic\n" +
         "/sessions \u2014 List all sessions\n" +
@@ -54,11 +63,26 @@ export function createCommandHandlers(
 
     const text = ctx.message?.text || "";
     const match = text.match(/^\/new(?:@\S+)?\s+(\S+)(?:\s+(.+))?$/);
+
+    // --- No-args reconcile: /new inside an existing topic ---
+    const topicThreadId = ctx.message?.message_thread_id;
+    if (!match && topicThreadId) {
+      const threadId = `${chatId}:${topicThreadId}`;
+      const existingSession = sessionManager.getByThread(threadId);
+      if (!existingSession) {
+        await ctx.reply("\u26a0\ufe0f No session in this topic. Use: /new <path> [name]", { message_thread_id: topicThreadId });
+        return;
+      }
+      // Reconcile using the existing session's path and name
+      return handleNewReconcile(ctx, chatId, existingSession);
+    }
+
     if (!match) {
       await ctx.reply(
         "Usage: /new <name-or-path> [session-name]\n" +
           "Example: /new my-project\n" +
           "Example: /new /home/user/my-project my-session\n\n" +
+          "Run /new with no args inside a topic to reconcile (add worktree)\n\n" +
           "Use /repos to see available projects.",
         threadOpts(ctx)
       );
@@ -68,7 +92,6 @@ export function createCommandHandlers(
     const pathInput = match[1];
     const repoName = path.basename(pathInput);
     const sessionName = match[2]?.trim() || repoName;
-    const topicTitle = match[2]?.trim() ? `${repoName}:${match[2].trim()}` : repoName;
 
     // Validate path via core
     const resolved = sessionManager.validateProjectPath(pathInput);
@@ -78,7 +101,38 @@ export function createCommandHandlers(
     }
     const projectPath = resolved.path!;
 
-    // Create forum topic (Telegram-specific)
+    // --- Reconcile mode: /new with args inside an existing session topic ---
+    if (topicThreadId) {
+      const threadId = `${chatId}:${topicThreadId}`;
+      const existingSession = sessionManager.getByThread(threadId);
+      if (existingSession) {
+        return handleNewReconcile(ctx, chatId, existingSession);
+      }
+    }
+
+    // Create worktree for git repos
+    let finalPath = projectPath;
+    let worktreeData: { repoPath: string; branch: string; worktreePath: string } | undefined;
+
+    if (isGitRepo(projectPath)) {
+      try {
+        const repoRoot = getRepoRoot(projectPath);
+        const branchName = sessionName !== repoName
+          ? sessionName
+          : `session-${new Date().toISOString().replace(/[-:T.]/g, "").substring(0, 15)}`;
+
+        const wt = createWorktree(repoRoot, branchName);
+        finalPath = wt.worktreePath;
+        worktreeData = { repoPath: repoRoot, branch: wt.branch, worktreePath: wt.worktreePath };
+      } catch (err: any) {
+        await ctx.reply(`\u26a0\ufe0f Failed to create worktree: ${err?.message}`, threadOpts(ctx));
+        return;
+      }
+    }
+
+    // --- Normal mode: create new topic + session ---
+    const topicTitle = match[2]?.trim() ? `${repoName}:${match[2].trim()}` : repoName;
+
     let topic;
     try {
       topic = await ctx.api.createForumTopic(chatId, topicTitle);
@@ -101,13 +155,14 @@ export function createCommandHandlers(
       sessionManager.create({
         threadId,
         channel: "telegram",
-        projectPath,
+        projectPath: finalPath,
         name: sessionName,
         channelMeta: {
           chatId,
           threadId: topic.message_thread_id,
           userId,
         },
+        worktree: worktreeData,
       });
     } catch (err: any) {
       await ctx.reply(`\u26a0\ufe0f Failed to create session: ${err?.message}`, threadOpts(ctx));
@@ -115,11 +170,17 @@ export function createCommandHandlers(
     }
 
     // Send welcome message in the new topic
-    await ctx.api.sendMessage(
-      chatId,
-      `\ud83d\ude80 Session "${sessionName}" created!\n\ud83d\udcc1 Project: ${projectPath}\n\nSend a message here to start chatting with Claude.`,
-      { message_thread_id: topic.message_thread_id }
-    );
+    let welcomeMsg = `\ud83d\ude80 Session "${sessionName}" created!\n\ud83d\udcc1 Project: ${projectPath}`;
+    if (worktreeData) {
+      welcomeMsg += `\n\ud83c\udf3f Branch: ${worktreeData.branch}`;
+      welcomeMsg += `\n\ud83d\udcc2 Worktree: ${worktreeData.worktreePath}`;
+      welcomeMsg += `\n\u2705 Auto-review enabled`;
+    }
+    welcomeMsg += `\n\nSend a message here to start chatting with Claude.`;
+
+    await ctx.api.sendMessage(chatId, welcomeMsg, {
+      message_thread_id: topic.message_thread_id,
+    });
 
     // Unpin the auto-pinned service message
     try {
@@ -133,6 +194,48 @@ export function createCommandHandlers(
       `\u2705 Created session "${sessionName}" \u2014 check the new topic!`,
       threadOpts(ctx)
     );
+  }
+
+  /** Reconcile an existing session: add worktree if it's a git repo without one. */
+  async function handleNewReconcile(ctx: Context, chatId: number, session: Session): Promise<void> {
+    const topicThreadId = ctx.message!.message_thread_id!;
+
+    if (session.worktree) {
+      await ctx.reply(
+        `\u2705 Session already up to date.\n\ud83c\udf3f Branch: ${session.worktree.branch}\n\ud83d\udcc2 Worktree: ${session.worktree.worktreePath}\n\u2705 Auto-review enabled`,
+        { message_thread_id: topicThreadId }
+      );
+      return;
+    }
+
+    // Resolve the original project path (before any worktree)
+    const originalPath = session.projectPath;
+
+    if (!isGitRepo(originalPath)) {
+      await ctx.reply(
+        `\u2705 Session already exists. Path is not a git repo \u2014 no worktree needed.`,
+        { message_thread_id: topicThreadId }
+      );
+      return;
+    }
+
+    try {
+      const repoRoot = getRepoRoot(originalPath);
+      const wt = createWorktree(repoRoot, session.name);
+
+      sessionManager.enableWorktree(session.id, {
+        repoPath: repoRoot,
+        branch: wt.branch,
+        worktreePath: wt.worktreePath,
+      });
+
+      await ctx.reply(
+        `\u2705 Worktree enabled!\n\ud83c\udf3f Branch: ${wt.branch}\n\ud83d\udcc2 Worktree: ${wt.worktreePath}\n\u2705 Auto-review enabled\n\n\u26a0\ufe0f Claude session reset (working directory changed).`,
+        { message_thread_id: topicThreadId }
+      );
+    } catch (err: any) {
+      await ctx.reply(`\u26a0\ufe0f Failed to create worktree: ${err?.message}`, { message_thread_id: topicThreadId });
+    }
   }
 
   async function handleReset(ctx: Context): Promise<void> {
@@ -177,6 +280,21 @@ export function createCommandHandlers(
     }
 
     const name = session.name;
+
+    // Clean up worktree if this is a worktree session
+    if (session.worktree) {
+      try {
+        removeWorktree(
+          session.worktree.repoPath,
+          session.worktree.worktreePath,
+          session.worktree.branch,
+          false // preserve branch
+        );
+      } catch (err: any) {
+        console.error(`[telegram] Failed to remove worktree:`, err?.message);
+      }
+    }
+
     sessionManager.deleteSession(session.id);
 
     // Try to close/delete the forum topic (Telegram-specific)
@@ -216,9 +334,23 @@ export function createCommandHandlers(
         `\ud83d\udccb Session: ${session.name}`,
         ``,
         `\ud83d\udcc1 ${session.projectPath}`,
+      ];
+      if (session.worktree) {
+        try {
+          const wtStatus = getWorktreeStatus(
+            session.worktree.worktreePath,
+            session.worktree.repoPath,
+            session.worktree.branch
+          );
+          lines.push(`\ud83c\udf3f Branch: ${session.worktree.branch} (${wtStatus.summary})`);
+        } catch {
+          lines.push(`\ud83c\udf3f Branch: ${session.worktree.branch}`);
+        }
+      }
+      lines.push(
         `\ud83d\udd50 Last active: ${active}`,
         `\ud83d\udd11 Session ID: ${session.agentSessionId ?? "none (new session)"}`,
-      ];
+      );
       await ctx.reply(lines.join("\n"), { message_thread_id: topicThreadId });
       return;
     }
@@ -238,7 +370,8 @@ export function createCommandHandlers(
         : "never";
       const resumed = s.agentSessionId ? "\ud83d\udfe2" : "\u26aa";
       const sessionId = s.agentSessionId ? `\n   \ud83d\udd11 ${s.agentSessionId}` : "";
-      return `${i + 1}. ${resumed} ${s.name}\n   \ud83d\udcc1 ${s.projectPath}\n   \ud83d\udd50 ${active}${sessionId}`;
+      const branch = s.worktree ? ` \ud83c\udf3f ${s.worktree.branch}` : "";
+      return `${i + 1}. ${resumed} ${s.name}\n   \ud83d\udcc1 ${s.projectPath}${branch}\n   \ud83d\udd50 ${active}${sessionId}`;
     });
 
     await ctx.reply(`\ud83d\udccb Sessions:\n\n${lines.join("\n\n")}`, threadOpts(ctx));

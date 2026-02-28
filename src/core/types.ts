@@ -5,6 +5,7 @@ export interface CoreConfig {
   dataDir: string;
   maxTurnsPerMessage?: number;
   maxBudgetPerMessage?: number;
+  maxReviewRounds: number;
 }
 
 // === Token Usage ===
@@ -34,6 +35,13 @@ export interface Session {
   totalDurationMs: number;       // Cumulative API duration
   totalTurns: number;            // Cumulative turns
   verbosity?: number;            // 1 = hide tools, 2 = show tools (default)
+
+  // --- Worktree metadata (undefined for legacy/non-git sessions) ---
+  worktree?: {
+    repoPath: string;            // Original repo path
+    branch: string;              // Branch name for this worktree
+    worktreePath: string;        // Absolute worktree path (same as projectPath)
+  };
 
   // --- Channel-specific metadata (opaque to core) ---
   channelMeta?: Record<string, unknown>;

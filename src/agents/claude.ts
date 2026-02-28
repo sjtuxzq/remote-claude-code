@@ -429,6 +429,7 @@ export class ClaudeAgent implements Agent {
       numTurns: result?.numTurns ?? 0,
       usage: result?.usage ?? { input_tokens: 0, output_tokens: 0 },
       questionAsked,
+      resultText: result?.result,
     };
   }
 }

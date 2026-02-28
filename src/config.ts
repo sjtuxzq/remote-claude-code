@@ -50,6 +50,7 @@ export const coreConfig: CoreConfig = {
   dataDir: process.env.DATA_DIR || "./data",
   maxTurnsPerMessage: optionalIntEnv("MAX_TURNS_PER_MESSAGE"),
   maxBudgetPerMessage: optionalFloatEnv("MAX_BUDGET_PER_MESSAGE"),
+  maxReviewRounds: optionalIntEnv("MAX_REVIEW_ROUNDS") ?? 3,
 };
 
 /** Telegram-specific config — only validated when telegram channel boots. */

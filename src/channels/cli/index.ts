@@ -7,6 +7,11 @@ import {
   type ChannelMessage,
   type AskUserQuestionInput,
 } from "../../core/types.js";
+import {
+  isGitRepo,
+  getRepoRoot,
+  createWorktree,
+} from "../../git/worktree.js";
 
 // ANSI color helpers
 const dim = (s: string) => `\x1b[2m${s}\x1b[0m`;
@@ -189,15 +194,38 @@ export async function startCli(orchestrator: Orchestrator): Promise<void> {
   }
 
   const sessionName = path.basename(resolved.path!);
+  let finalPath = resolved.path!;
+  let worktreeData: { repoPath: string; branch: string; worktreePath: string } | undefined;
+
+  if (isGitRepo(resolved.path!)) {
+    try {
+      const repoRoot = getRepoRoot(resolved.path!);
+      const branchName = `session-${new Date().toISOString().replace(/[-:T.]/g, "").substring(0, 15)}`;
+      const wt = createWorktree(repoRoot, branchName);
+      finalPath = wt.worktreePath;
+      worktreeData = { repoPath: repoRoot, branch: wt.branch, worktreePath: wt.worktreePath };
+    } catch (err: any) {
+      console.error(red(`\u26a0\ufe0f Failed to create worktree: ${err?.message}`));
+      process.exit(1);
+    }
+  }
+
   let currentSession = sessionManager.create({
     threadId: "cli:default",
     channel: "cli",
-    projectPath: resolved.path!,
+    projectPath: finalPath,
     name: sessionName,
+    worktree: worktreeData,
   });
 
   console.log(green(`\n\u2705 Session "${sessionName}" created`));
-  console.log(`\ud83d\udcc1 Project: ${resolved.path!}\n`);
+  console.log(`\ud83d\udcc1 Project: ${resolved.path!}`);
+  if (worktreeData) {
+    console.log(`\ud83c\udf3f Branch: ${worktreeData.branch}`);
+    console.log(`\ud83d\udcc2 Worktree: ${worktreeData.worktreePath}`);
+    console.log(`\u2705 Auto-review enabled`);
+  }
+  console.log();
   console.log(
     dim(
       "Commands: new <path>, reset, sessions, usage, repos, verbosity <1|2>, restart, update, exit\n"
@@ -249,15 +277,39 @@ export async function startCli(orchestrator: Orchestrator): Promise<void> {
         }
         const newName = path.basename(newResolved.path!);
         const threadId = `cli:${Date.now()}`;
+
+        let newFinalPath = newResolved.path!;
+        let newWorktreeData: { repoPath: string; branch: string; worktreePath: string } | undefined;
+
+        if (isGitRepo(newResolved.path!)) {
+          try {
+            const repoRoot = getRepoRoot(newResolved.path!);
+            const branchName = `session-${new Date().toISOString().replace(/[-:T.]/g, "").substring(0, 15)}`;
+            const wt = createWorktree(repoRoot, branchName);
+            newFinalPath = wt.worktreePath;
+            newWorktreeData = { repoPath: repoRoot, branch: wt.branch, worktreePath: wt.worktreePath };
+          } catch (err: any) {
+            console.error(red(`\u26a0\ufe0f Failed to create worktree: ${err?.message}`));
+            continue;
+          }
+        }
+
         currentSession = sessionManager.create({
           threadId,
           channel: "cli",
-          projectPath: newResolved.path!,
+          projectPath: newFinalPath,
           name: newName,
+          worktree: newWorktreeData,
         });
 
         console.log(green(`\u2705 Session "${newName}" created`));
-        console.log(`\ud83d\udcc1 Project: ${newResolved.path!}\n`);
+        console.log(`\ud83d\udcc1 Project: ${newResolved.path!}`);
+        if (newWorktreeData) {
+          console.log(`\ud83c\udf3f Branch: ${newWorktreeData.branch}`);
+          console.log(`\ud83d\udcc2 Worktree: ${newWorktreeData.worktreePath}`);
+          console.log(`\u2705 Auto-review enabled`);
+        }
+        console.log();
         continue;
       }
 

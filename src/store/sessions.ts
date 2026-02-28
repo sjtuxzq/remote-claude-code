@@ -114,6 +114,7 @@ export class SessionManager {
     name: string;
     channelMeta?: Record<string, unknown>;
     verbosity?: number;
+    worktree?: { repoPath: string; branch: string; worktreePath: string };
   }): Session {
     const now = new Date().toISOString();
     const session: Session = {
@@ -129,6 +130,7 @@ export class SessionManager {
       totalDurationMs: 0,
       totalTurns: 0,
       verbosity: opts.verbosity,
+      worktree: opts.worktree,
       channelMeta: opts.channelMeta,
     };
     this.sessions.push(session);
@@ -309,5 +311,26 @@ export class SessionManager {
       }
     }
     return repos;
+  }
+
+  /** Enable worktree on an existing session. Updates projectPath, worktree, and resets agentSessionId. */
+  enableWorktree(
+    id: string,
+    worktree: { repoPath: string; branch: string; worktreePath: string }
+  ): boolean {
+    const session = this.getById(id);
+    if (!session) return false;
+    session.worktree = worktree;
+    session.projectPath = worktree.worktreePath;
+    session.agentSessionId = null; // cwd changed, old session invalid
+    this.save();
+    return true;
+  }
+
+  /** Find all sessions targeting the same base repo (by worktree.repoPath or projectPath). */
+  getSessionsForRepo(repoPath: string): Session[] {
+    return this.sessions.filter(
+      (s) => s.worktree?.repoPath === repoPath || s.projectPath === repoPath
+    );
   }
 }

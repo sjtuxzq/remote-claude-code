@@ -23,6 +23,7 @@ export interface AgentResult {
   numTurns: number;
   usage: TokenUsage;
   questionAsked?: boolean; // True if agent asked the user a question (awaiting answer)
+  resultText?: string; // Raw result text from agent (for review pipeline parsing)
 }
 
 // === Agent Interface ===
