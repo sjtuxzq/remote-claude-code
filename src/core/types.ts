@@ -34,7 +34,7 @@ export interface Session {
   totalUsage: TokenUsage;        // Cumulative token usage
   totalDurationMs: number;       // Cumulative API duration
   totalTurns: number;            // Cumulative turns
-  verbosity?: number;            // 1 = hide tools, 2 = show tools (default)
+  verbosity?: number;            // 1 = hide tools, 2 = collapsed cards (default), 3 = expanded cards
 
   // --- Worktree metadata (undefined for legacy/non-git sessions) ---
   worktree?: {
@@ -61,7 +61,7 @@ export interface Session {
 export type ChannelMessage =
   | { type: "user"; text: string }
   | { type: "assistant"; text: string }
-  | { type: "tool_call"; name: string; input: Record<string, unknown> }
+  | { type: "tool_call"; name: string; input: Record<string, unknown>; collapsed?: boolean }
   | { type: "tool_result"; name: string; isError: boolean }
   | { type: "text"; text: string; subtype: "notice" | "error" }
   | { type: "question"; question: AskUserQuestionInput }

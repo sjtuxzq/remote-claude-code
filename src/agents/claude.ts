@@ -385,7 +385,12 @@ export class ClaudeAgent implements Agent {
       onToolUse: (name, input) => {
         lastToolName = name;
         if (verbosity >= 2) {
-          endpoint.send(threadId, { type: "tool_call", name, input });
+          endpoint.send(threadId, {
+            type: "tool_call",
+            name,
+            input,
+            collapsed: verbosity < 3,
+          });
         }
       },
       onToolResult: (_name, isError) => {

@@ -487,22 +487,23 @@ export function createCommandHandlers(
       await ctx.reply(
         `\ud83d\udd27 Tool verbosity: ${current}\n\n` +
           `1 \u2014 Hide tool messages\n` +
-          `2 \u2014 Show tool cards with inputs\n\n` +
-          `Usage: /verbosity <1|2>`,
+          `2 \u2014 Show tool cards (collapsed)\n` +
+          `3 \u2014 Show tool cards (expanded)\n\n` +
+          `Usage: /verbosity <1|2|3>`,
         { message_thread_id: topicThreadId }
       );
       return;
     }
 
     const level = parseInt(match[1], 10);
-    if (level < 1 || level > 2) {
-      await ctx.reply("\u26a0\ufe0f Verbosity must be 1 or 2.", { message_thread_id: topicThreadId });
+    if (level < 1 || level > 3) {
+      await ctx.reply("\u26a0\ufe0f Verbosity must be 1, 2, or 3.", { message_thread_id: topicThreadId });
       return;
     }
 
     sessionManager.updateVerbosity(session.id, level);
 
-    const labels = ["", "Hide tool messages", "Show tool cards"];
+    const labels = ["", "Hide tool messages", "Show tool cards (collapsed)", "Show tool cards (expanded)"];
     await ctx.reply(
       `\u2705 Verbosity set to ${level} \u2014 ${labels[level]}`,
       { message_thread_id: topicThreadId }

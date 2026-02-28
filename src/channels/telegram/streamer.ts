@@ -167,7 +167,7 @@ export class TelegramTransport {
         this.handleAssistant(threadId, message.text);
         break;
       case "tool_call":
-        this.handleToolCall(threadId, message.name, message.input);
+        this.handleToolCall(threadId, message.name, message.input, message.collapsed);
         break;
       case "tool_result":
         this.handleToolResult(threadId, message.name, message.isError);
@@ -199,19 +199,34 @@ export class TelegramTransport {
   private handleToolCall(
     threadId: string,
     name: string,
-    input: Record<string, unknown>
+    input: Record<string, unknown>,
+    collapsed?: boolean
   ): void {
     const state = this.getOrCreateState(threadId);
 
     const inputSummary = formatToolInput(name, input);
-    let card = `\n\n\ud83d\udd27 <b>${escapeHtml(name)}</b>`;
-    if (inputSummary) {
-      card += `\n<blockquote>${escapeHtml(inputSummary)}</blockquote>`;
-    }
-    card += `\n`;
 
-    state.lastToolTag = `\ud83d\udd27 <b>${escapeHtml(name)}</b>`;
-    state.pendingHtml += card;
+    if (collapsed) {
+      // Collapsed: entire card inside expandable blockquote
+      let card = `\n\n<blockquote expandable>\ud83d\udd27 <b>${escapeHtml(name)}</b>`;
+      if (inputSummary) {
+        card += `\n${escapeHtml(inputSummary)}`;
+      }
+      card += `</blockquote>\n`;
+
+      state.lastToolTag = `\ud83d\udd27 <b>${escapeHtml(name)}</b>`;
+      state.pendingHtml += card;
+    } else {
+      // Expanded: name outside, input in regular blockquote
+      let card = `\n\n\ud83d\udd27 <b>${escapeHtml(name)}</b>`;
+      if (inputSummary) {
+        card += `\n<blockquote>${escapeHtml(inputSummary)}</blockquote>`;
+      }
+      card += `\n`;
+
+      state.lastToolTag = `\ud83d\udd27 <b>${escapeHtml(name)}</b>`;
+      state.pendingHtml += card;
+    }
   }
 
   private handleToolResult(
