@@ -101,7 +101,8 @@ interface ThreadStreamState {
   currentMessageHtml: string;
   flushTimer: ReturnType<typeof setInterval> | null;
   flushPromise: Promise<void>;
-  lastToolTag: string;
+  pendingToolTags: string[]; // FIFO queue of tool tags awaiting results
+  toolCounter: number; // monotonic counter for unique tool tags
   lastSentHtml: string;
   toolGroupOpen: boolean; // true while accumulating collapsed tool lines
 }
@@ -113,7 +114,8 @@ function createStreamState(): ThreadStreamState {
     currentMessageHtml: "",
     flushTimer: null,
     flushPromise: Promise.resolve(),
-    lastToolTag: "",
+    pendingToolTags: [],
+    toolCounter: 0,
     lastSentHtml: "",
     toolGroupOpen: false,
   };
@@ -216,7 +218,9 @@ export class TelegramTransport {
 
     const escapedName = escapeHtml(name);
     const inputSummary = formatToolInput(name, input);
-    const toolTag = `\ud83d\udd27 <b>${escapedName}</b>`;
+    // Append zero-width spaces to make each tag unique for string replacement
+    const uid = "\u200B".repeat(++state.toolCounter);
+    const toolTag = `\ud83d\udd27${uid} <b>${escapedName}</b>`;
 
     if (collapsed) {
       // Grouped collapsed: accumulate tool lines inside a single expandable blockquote
@@ -237,7 +241,7 @@ export class TelegramTransport {
       state.pendingHtml += card;
     }
 
-    state.lastToolTag = toolTag;
+    state.pendingToolTags.push(toolTag);
   }
 
   private handleToolResult(
@@ -246,20 +250,21 @@ export class TelegramTransport {
     isError: boolean
   ): void {
     const state = this.threadStates.get(threadId);
-    if (!state || !state.lastToolTag) return;
+    if (!state || state.pendingToolTags.length === 0) return;
 
+    const toolTag = state.pendingToolTags.shift()!;
     const icon = isError ? "\u274c" : "\u2705";
-    const updatedTag = state.lastToolTag.replace(/^\ud83d\udd27/, icon);
+    const updatedTag = toolTag.replace(/^\ud83d\udd27/, icon);
 
-    if (state.pendingHtml.includes(state.lastToolTag)) {
+    if (state.pendingHtml.includes(toolTag)) {
       state.pendingHtml = state.pendingHtml.replace(
-        state.lastToolTag,
+        toolTag,
         updatedTag
       );
     }
-    if (state.currentMessageHtml.includes(state.lastToolTag)) {
+    if (state.currentMessageHtml.includes(toolTag)) {
       state.currentMessageHtml = state.currentMessageHtml.replace(
-        state.lastToolTag,
+        toolTag,
         updatedTag
       );
       if (!state.pendingHtml) {
@@ -267,8 +272,6 @@ export class TelegramTransport {
         this.scheduleFlush(threadId, state);
       }
     }
-
-    state.lastToolTag = "";
   }
 
   private handleError(threadId: string, error: string): void {
