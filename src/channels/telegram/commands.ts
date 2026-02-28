@@ -33,8 +33,6 @@ export function createCommandHandlers(
         "/new <name|path> [session-name] \u2014 Start a new Claude session\n" +
         "/reset \u2014 Reset session in current topic (fresh conversation)\n" +
         "/delete \u2014 Delete session and close topic\n" +
-        "/archive \u2014 Close topic (keeps session data)\n" +
-        "/unarchive \u2014 Reopen an archived topic\n" +
         "/sessions \u2014 List all sessions\n" +
         "/usage \u2014 Show token usage\n" +
         "/verbosity \u2014 Set tool message verbosity (1=hide, 2=show)\n" +
@@ -219,7 +217,7 @@ export function createCommandHandlers(
         ``,
         `\ud83d\udcc1 ${session.projectPath}`,
         `\ud83d\udd50 Last active: ${active}`,
-        `\ud83d\udd11 Session ID: ${session.claudeSessionId ?? "none (new session)"}`,
+        `\ud83d\udd11 Session ID: ${session.agentSessionId ?? "none (new session)"}`,
       ];
       await ctx.reply(lines.join("\n"), { message_thread_id: topicThreadId });
       return;
@@ -238,8 +236,8 @@ export function createCommandHandlers(
       const active = s.lastActiveAt
         ? new Date(s.lastActiveAt).toLocaleString()
         : "never";
-      const resumed = s.claudeSessionId ? "\ud83d\udfe2" : "\u26aa";
-      const sessionId = s.claudeSessionId ? `\n   \ud83d\udd11 ${s.claudeSessionId}` : "";
+      const resumed = s.agentSessionId ? "\ud83d\udfe2" : "\u26aa";
+      const sessionId = s.agentSessionId ? `\n   \ud83d\udd11 ${s.agentSessionId}` : "";
       return `${i + 1}. ${resumed} ${s.name}\n   \ud83d\udcc1 ${s.projectPath}\n   \ud83d\udd50 ${active}${sessionId}`;
     });
 
@@ -374,65 +372,6 @@ export function createCommandHandlers(
     );
   }
 
-  async function handleArchive(ctx: Context): Promise<void> {
-    const chatId = ctx.chat?.id;
-    if (!chatId) return;
-
-    const topicThreadId = ctx.message?.message_thread_id;
-    if (!topicThreadId) {
-      await ctx.reply("\u26a0\ufe0f Use /archive inside a session topic.", threadOpts(ctx));
-      return;
-    }
-
-    const threadId = `${chatId}:${topicThreadId}`;
-    const session = sessionManager.getByThread(threadId);
-    if (!session) {
-      await ctx.reply("\u26a0\ufe0f This topic is not a tracked session.", { message_thread_id: topicThreadId });
-      return;
-    }
-
-    await ctx.reply(`\ud83d\udce6 Session "${session.name}" archived. Use /new to reopen or resume later.`, {
-      message_thread_id: topicThreadId,
-    });
-
-    try {
-      await ctx.api.closeForumTopic(chatId, topicThreadId);
-    } catch {
-      await ctx.reply("\u26a0\ufe0f Could not close the topic. You may need to close it manually.", {
-        message_thread_id: topicThreadId,
-      });
-    }
-  }
-
-  async function handleUnarchive(ctx: Context): Promise<void> {
-    const chatId = ctx.chat?.id;
-    if (!chatId) return;
-
-    const topicThreadId = ctx.message?.message_thread_id;
-    if (!topicThreadId) {
-      await ctx.reply("\u26a0\ufe0f Use /unarchive inside an archived session topic.", threadOpts(ctx));
-      return;
-    }
-
-    const threadId = `${chatId}:${topicThreadId}`;
-    const session = sessionManager.getByThread(threadId);
-    if (!session) {
-      await ctx.reply("\u26a0\ufe0f This topic is not a tracked session.", { message_thread_id: topicThreadId });
-      return;
-    }
-
-    try {
-      await ctx.api.reopenForumTopic(chatId, topicThreadId);
-      await ctx.reply(`\ud83d\udce4 Session "${session.name}" unarchived. You can continue chatting.`, {
-        message_thread_id: topicThreadId,
-      });
-    } catch {
-      await ctx.reply("\u26a0\ufe0f Could not reopen the topic. You may need to reopen it manually.", {
-        message_thread_id: topicThreadId,
-      });
-    }
-  }
-
   async function handleRestart(ctx: Context): Promise<void> {
     await ctx.reply("\u267b\ufe0f Restarting...", threadOpts(ctx));
     orchestrator.restart();
@@ -464,8 +403,6 @@ export function createCommandHandlers(
     handleNew,
     handleReset,
     handleDelete,
-    handleArchive,
-    handleUnarchive,
     handleSessions,
     handleUsage,
     handleRepos,

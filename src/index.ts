@@ -1,49 +1,36 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { config } from "./config.js";
-import { createBot } from "./bot.js";
+import { coreConfig, channelType, getTelegramConfig } from "./config.js";
+import { SessionManager } from "./store/sessions.js";
+import { Orchestrator } from "./core/orchestrator.js";
+import { ClaudeAgent } from "./agents/claude.js";
 
 // Ensure data directory exists
-const dataDir = path.resolve(config.dataDir);
+const dataDir = path.resolve(coreConfig.dataDir);
 if (!fs.existsSync(dataDir)) {
   fs.mkdirSync(dataDir, { recursive: true });
   console.log(`Created data directory: ${dataDir}`);
 }
 
-// Create and start bot
-const bot = createBot();
+// Create shared core components
+const sessionManager = new SessionManager(coreConfig);
+const agent = new ClaudeAgent();
+const orchestrator = new Orchestrator(sessionManager, coreConfig, agent);
 
-console.log("🤖 Claude Code Remote Bot starting...");
-console.log(`   Allowed users: ${config.allowedUserIds.join(", ")}`);
 console.log(`   Data dir: ${dataDir}`);
+console.log(`   Channel: ${channelType}`);
+console.log(`   Agent: ${agent.name}`);
 
-// Set bot commands on startup
-await bot.api.setMyCommands([
-  { command: "new", description: "Start a new session (/new <name|path> [session-name])" },
-  { command: "reset", description: "Reset session in current topic" },
-  { command: "delete", description: "Delete session and close topic" },
-  { command: "sessions", description: "List all sessions" },
-  { command: "usage", description: "Show token usage" },
-  { command: "repos", description: "List available project paths" },
-  { command: "verbosity", description: "Set tool verbosity (1=hide, 2=show)" },
-  { command: "restart", description: "Restart the bot" },
-  { command: "update", description: "Pull latest code, build, and restart" },
-  { command: "help", description: "Show help message" },
-]);
-console.log("📋 Bot commands registered");
-
-bot.start({
-  onStart: (botInfo) => {
-    console.log(`✅ Bot started as @${botInfo.username}`);
-  },
-});
-
-// Graceful shutdown
-const shutdown = () => {
-  console.log("\n🛑 Shutting down...");
-  bot.stop();
-  process.exit(0);
-};
-
-process.on("SIGINT", shutdown);
-process.on("SIGTERM", shutdown);
+// Boot the appropriate channel
+if (channelType === "cli") {
+  const { startCli } = await import("./channels/cli/index.js");
+  await startCli(orchestrator);
+} else if (channelType === "telegram") {
+  const telegramConfig = getTelegramConfig();
+  const { startTelegram } = await import("./channels/telegram/index.js");
+  await startTelegram(orchestrator, telegramConfig);
+} else {
+  console.error(`Unknown channel type: ${channelType}`);
+  console.error(`Supported channels: telegram, cli`);
+  process.exit(1);
+}

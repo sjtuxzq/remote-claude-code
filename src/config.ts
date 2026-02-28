@@ -1,14 +1,6 @@
 import "dotenv/config";
-
-export interface Config {
-  botToken: string;
-  allowedUserIds: number[];
-  allowedChatIds: number[];
-  allowedPaths: string[];
-  dataDir: string;
-  maxTurnsPerMessage?: number;
-  maxBudgetPerMessage?: number;
-}
+import type { CoreConfig } from "./core/types.js";
+import type { TelegramConfig } from "./channels/telegram/auth.js";
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -49,15 +41,25 @@ function optionalStringListEnv(name: string): string[] {
   return value.split(",").map((s) => s.trim()).filter(Boolean);
 }
 
-export const config: Config = {
-  botToken: requireEnv("BOT_TOKEN"),
-  allowedUserIds: requireEnv("ALLOWED_USER_IDS")
-    .split(",")
-    .map((id) => parseInt(id.trim(), 10))
-    .filter((id) => !isNaN(id)),
-  allowedChatIds: optionalIdListEnv("ALLOWED_CHAT_IDS"),
+/** Which channel to run. Defaults to "telegram". */
+export const channelType: string = process.env.CHANNEL || "telegram";
+
+/** Shared config — always validated regardless of channel. */
+export const coreConfig: CoreConfig = {
   allowedPaths: optionalStringListEnv("ALLOWED_PATHS"),
   dataDir: process.env.DATA_DIR || "./data",
   maxTurnsPerMessage: optionalIntEnv("MAX_TURNS_PER_MESSAGE"),
   maxBudgetPerMessage: optionalFloatEnv("MAX_BUDGET_PER_MESSAGE"),
 };
+
+/** Telegram-specific config — only validated when telegram channel boots. */
+export function getTelegramConfig(): TelegramConfig {
+  return {
+    botToken: requireEnv("BOT_TOKEN"),
+    allowedUserIds: requireEnv("ALLOWED_USER_IDS")
+      .split(",")
+      .map((id) => parseInt(id.trim(), 10))
+      .filter((id) => !isNaN(id)),
+    allowedChatIds: optionalIdListEnv("ALLOWED_CHAT_IDS"),
+  };
+}
