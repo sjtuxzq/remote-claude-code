@@ -103,6 +103,7 @@ interface ThreadStreamState {
   flushPromise: Promise<void>;
   lastToolTag: string;
   lastSentHtml: string;
+  toolGroupOpen: boolean; // true while accumulating collapsed tool lines
 }
 
 function createStreamState(): ThreadStreamState {
@@ -114,6 +115,7 @@ function createStreamState(): ThreadStreamState {
     flushPromise: Promise.resolve(),
     lastToolTag: "",
     lastSentHtml: "",
+    toolGroupOpen: false,
   };
 }
 
@@ -190,8 +192,16 @@ export class TelegramTransport {
 
   // === Private: message type handlers ===
 
+  /** Close any open collapsed tool group by appending the closing tag. */
+  private closeToolGroup(state: ThreadStreamState): void {
+    if (!state.toolGroupOpen) return;
+    state.pendingHtml += `</blockquote>`;
+    state.toolGroupOpen = false;
+  }
+
   private handleAssistant(threadId: string, text: string): void {
     const state = this.getOrCreateState(threadId);
+    this.closeToolGroup(state);
     state.pendingHtml += escapeHtml(text);
     console.log(`[telegram] append: ${text.length} chars`);
   }
@@ -208,21 +218,26 @@ export class TelegramTransport {
     const inputSummary = formatToolInput(name, input);
     const toolTag = `\ud83d\udd27 <b>${escapedName}</b>`;
 
-    let card: string;
     if (collapsed) {
-      // Collapsed: entire card inside expandable blockquote
-      card = `\n\n<blockquote expandable>${toolTag}`;
-      if (inputSummary) card += `\n${escapeHtml(inputSummary)}`;
-      card += `</blockquote>\n`;
+      // Grouped collapsed: accumulate tool lines inside a single expandable blockquote
+      if (!state.toolGroupOpen) {
+        state.pendingHtml += `\n\n<blockquote expandable>`;
+        state.toolGroupOpen = true;
+      } else {
+        state.pendingHtml += `\n`;
+      }
+      state.pendingHtml += toolTag;
+      if (inputSummary) state.pendingHtml += `  ${escapeHtml(inputSummary)}`;
     } else {
       // Expanded: name outside, input in regular blockquote
-      card = `\n\n${toolTag}`;
+      this.closeToolGroup(state);
+      let card = `\n\n${toolTag}`;
       if (inputSummary) card += `\n<blockquote>${escapeHtml(inputSummary)}</blockquote>`;
       card += `\n`;
+      state.pendingHtml += card;
     }
 
     state.lastToolTag = toolTag;
-    state.pendingHtml += card;
   }
 
   private handleToolResult(
@@ -258,6 +273,7 @@ export class TelegramTransport {
 
   private handleError(threadId: string, error: string): void {
     const state = this.getOrCreateState(threadId);
+    this.closeToolGroup(state);
     state.pendingHtml += `\n\u26a0\ufe0f Error: ${escapeHtml(error)}\n`;
   }
 
@@ -276,12 +292,17 @@ export class TelegramTransport {
     threadId: string,
     question: AskUserQuestionInput
   ): void {
+    const state = this.getOrCreateState(threadId);
+    this.closeToolGroup(state);
     this.handleAssistant(threadId, "\n\n" + formatQuestion(question));
   }
 
   private handleDone(threadId: string): void {
     const state = this.threadStates.get(threadId);
     if (!state) return;
+
+    // Close any open tool group
+    this.closeToolGroup(state);
 
     // Stop flush timer
     if (state.flushTimer) {
