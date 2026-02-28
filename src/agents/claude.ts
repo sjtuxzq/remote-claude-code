@@ -341,6 +341,8 @@ function buildArgs(request: AgentRequest): string[] {
 
   if (request.agentSessionId) {
     args.push("--resume", request.agentSessionId);
+  } else if (request.newSessionId) {
+    args.push("--session-id", request.newSessionId);
   }
 
   if (request.config.maxTurns) {
@@ -365,18 +367,17 @@ export class ClaudeAgent implements Agent {
     const args = buildArgs(request);
 
     console.log(`[claude-agent] Args: ${args.join(" ")}`);
-    console.log(`[claude-agent] Agent session ID: ${request.agentSessionId ?? "new"}`);
+    console.log(`[claude-agent] Agent session ID: ${request.agentSessionId ?? request.newSessionId ?? "new"}`);
     console.log(`[claude-agent] Project path: ${request.projectPath}`);
 
-    let agentSessionId: string | undefined;
+    // Session ID is known immediately: either resuming or pre-generated via newSessionId
+    const agentSessionId = request.agentSessionId ?? request.newSessionId;
     let lastToolName = "tool";
     let questionAsked = false;
 
     const callbacks: RunnerCallbacks = {
-      onSessionId: (sessionId) => {
-        if (!agentSessionId) {
-          agentSessionId = sessionId;
-        }
+      onSessionId: (_sessionId) => {
+        // Session ID is already known upfront (pre-generated or resumed)
       },
       onText: (text) => {
         endpoint.send(threadId, { type: "assistant", text });

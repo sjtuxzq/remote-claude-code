@@ -1,6 +1,7 @@
 import { execSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import * as path from "node:path";
+import * as crypto from "node:crypto";
 import type { Agent, AgentRequest } from "./agent.js";
 import type { SessionManager } from "../store/sessions.js";
 import type { CoreConfig, ChannelEndpoint } from "./types.js";
@@ -160,11 +161,19 @@ export class Orchestrator {
       prompt += `\n\n[IMPORTANT: ${CODING_INSTRUCTION}]`;
     }
 
+    // For new sessions, generate a UUID upfront so we know the session ID immediately
+    let newSessionId: string | undefined;
+    if (!session.agentSessionId) {
+      newSessionId = crypto.randomUUID();
+      this.sessionManager.updateAgentSessionId(sessionId, newSessionId);
+    }
+
     const request: AgentRequest = {
       prompt,
       threadId,
       endpoint,
       agentSessionId: session.agentSessionId,
+      newSessionId,
       projectPath: session.projectPath,
       config: {
         maxTurns: this.config.maxTurnsPerMessage,
@@ -176,13 +185,7 @@ export class Orchestrator {
     try {
       const result = await this.agent.run(request);
 
-      // Persist agent session ID
-      if (result.agentSessionId && !session.agentSessionId) {
-        this.sessionManager.updateAgentSessionId(
-          sessionId,
-          result.agentSessionId
-        );
-      }
+      // agentSessionId is already persisted before agent.run() for new sessions
 
       // Persist usage
       this.sessionManager.addUsage(
@@ -417,7 +420,8 @@ export class Orchestrator {
           );
 
           // Update agent session ID if it changed
-          if (coderResult.agentSessionId) {
+          // (shouldn't change for resumed sessions, but safety net)
+          if (coderResult.agentSessionId && coderResult.agentSessionId !== freshSession.agentSessionId) {
             this.sessionManager.updateAgentSessionId(
               sessionId,
               coderResult.agentSessionId

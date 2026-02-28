@@ -7,6 +7,7 @@ export interface AgentRequest {
   threadId: string;
   endpoint: ChannelEndpoint; // Agent sends ChannelMessages here
   agentSessionId: string | null; // For resume (Claude) or thread (OpenAI)
+  newSessionId?: string; // Pre-generated UUID for new sessions (avoids waiting for CLI output)
   projectPath: string;
   config: {
     maxTurns?: number;
