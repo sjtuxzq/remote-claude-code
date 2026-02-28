@@ -87,8 +87,8 @@ type UserContentBlock = ToolResultBlock | TextBlock;
 interface RunnerCallbacks {
   onSessionId: (sessionId: string) => void;
   onText: (text: string) => void;
-  onToolUse: (name: string, input: Record<string, unknown>) => void;
-  onToolResult: (name: string, isError: boolean) => void;
+  onToolUse: (toolUseId: string, name: string, input: Record<string, unknown>) => void;
+  onToolResult: (toolUseId: string, name: string, isError: boolean) => void;
   onQuestion: (toolUseId: string, input: AskUserQuestionInput) => void;
   onError: (error: string) => void;
 }
@@ -250,8 +250,7 @@ function runClaude(
           );
           callbacks.onQuestion(block.id, block.input as any);
         } else {
-          lastToolName = block.name;
-          callbacks.onToolUse(block.name, block.input ?? {});
+          callbacks.onToolUse(block.id, block.name, block.input ?? {});
         }
       }
     }
@@ -263,7 +262,7 @@ function runClaude(
     for (const block of event.message.content as UserContentBlock[]) {
       if (block.type === "tool_result") {
         const isError = block.is_error ?? false;
-        callbacks.onToolResult(lastToolName, isError);
+        callbacks.onToolResult(block.tool_use_id, lastToolName, isError);
       }
     }
   };
@@ -372,7 +371,6 @@ export class ClaudeAgent implements Agent {
 
     // Session ID is known immediately: either resuming or pre-generated via newSessionId
     const agentSessionId = request.agentSessionId ?? request.newSessionId;
-    let lastToolName = "tool";
     let questionAsked = false;
 
     const callbacks: RunnerCallbacks = {
@@ -382,22 +380,23 @@ export class ClaudeAgent implements Agent {
       onText: (text) => {
         endpoint.send(threadId, { type: "assistant", text });
       },
-      onToolUse: (name, input) => {
-        lastToolName = name;
+      onToolUse: (toolUseId, name, input) => {
         if (verbosity >= 2) {
           endpoint.send(threadId, {
             type: "tool_call",
+            toolUseId,
             name,
             input,
             collapsed: verbosity < 3,
           });
         }
       },
-      onToolResult: (_name, isError) => {
+      onToolResult: (toolUseId, _name, isError) => {
         if (verbosity >= 2) {
           endpoint.send(threadId, {
             type: "tool_result",
-            name: lastToolName,
+            toolUseId,
+            name: _name,
             isError,
           });
         }

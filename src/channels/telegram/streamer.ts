@@ -101,7 +101,7 @@ interface ThreadStreamState {
   currentMessageHtml: string;
   flushTimer: ReturnType<typeof setInterval> | null;
   flushPromise: Promise<void>;
-  pendingToolTags: string[]; // FIFO queue of tool tags awaiting results
+  toolTagsByUseId: Map<string, string>; // toolUseId → HTML tag for icon replacement
   toolCounter: number; // monotonic counter for unique tool tags
   lastSentHtml: string;
   toolGroupOpen: boolean; // true while accumulating collapsed tool lines
@@ -114,7 +114,7 @@ function createStreamState(): ThreadStreamState {
     currentMessageHtml: "",
     flushTimer: null,
     flushPromise: Promise.resolve(),
-    pendingToolTags: [],
+    toolTagsByUseId: new Map(),
     toolCounter: 0,
     lastSentHtml: "",
     toolGroupOpen: false,
@@ -171,10 +171,10 @@ export class TelegramTransport {
         this.handleAssistant(threadId, message.text);
         break;
       case "tool_call":
-        this.handleToolCall(threadId, message.name, message.input, message.collapsed);
+        this.handleToolCall(threadId, message.toolUseId, message.name, message.input, message.collapsed);
         break;
       case "tool_result":
-        this.handleToolResult(threadId, message.name, message.isError);
+        this.handleToolResult(threadId, message.toolUseId, message.isError);
         break;
       case "text":
         if (message.subtype === "error") {
@@ -210,6 +210,7 @@ export class TelegramTransport {
 
   private handleToolCall(
     threadId: string,
+    toolUseId: string,
     name: string,
     input: Record<string, unknown>,
     collapsed?: boolean
@@ -241,18 +242,21 @@ export class TelegramTransport {
       state.pendingHtml += card;
     }
 
-    state.pendingToolTags.push(toolTag);
+    state.toolTagsByUseId.set(toolUseId, toolTag);
   }
 
   private handleToolResult(
     threadId: string,
-    name: string,
+    toolUseId: string,
     isError: boolean
   ): void {
     const state = this.threadStates.get(threadId);
-    if (!state || state.pendingToolTags.length === 0) return;
+    if (!state) return;
 
-    const toolTag = state.pendingToolTags.shift()!;
+    const toolTag = state.toolTagsByUseId.get(toolUseId);
+    if (!toolTag) return;
+    state.toolTagsByUseId.delete(toolUseId);
+
     const icon = isError ? "\u274c" : "\u2705";
     const updatedTag = toolTag.replace(/^\ud83d\udd27/, icon);
 

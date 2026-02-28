@@ -61,8 +61,8 @@ export interface Session {
 export type ChannelMessage =
   | { type: "user"; text: string }
   | { type: "assistant"; text: string }
-  | { type: "tool_call"; name: string; input: Record<string, unknown>; collapsed?: boolean }
-  | { type: "tool_result"; name: string; isError: boolean }
+  | { type: "tool_call"; toolUseId: string; name: string; input: Record<string, unknown>; collapsed?: boolean }
+  | { type: "tool_result"; toolUseId: string; name: string; isError: boolean }
   | { type: "text"; text: string; subtype: "notice" | "error" }
   | { type: "question"; question: AskUserQuestionInput }
   | { type: "done" };
